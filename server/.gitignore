@@ -15,6 +15,7 @@ server/venv/
 __pycache__/
 *.py[cod]
 server/.env
+.env
 
 # IDE settings
 .vscode/

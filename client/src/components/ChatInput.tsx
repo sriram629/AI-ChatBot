@@ -2,66 +2,74 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Send } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
+  onSend: (content: string) => void;
   disabled?: boolean;
+  className?: string; // Allow external styling
 }
 
-const ChatInput = ({ onSend, disabled }: ChatInputProps) => {
-  const [message, setMessage] = useState("");
+const ChatInput = ({ onSend, disabled, className }: ChatInputProps) => {
+  const [content, setContent] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height =
-        textareaRef.current.scrollHeight + "px";
+      textareaRef.current.style.height = "inherit";
+      const scrollHeight = textareaRef.current.scrollHeight;
+      textareaRef.current.style.height = `${Math.min(scrollHeight, 200)}px`;
     }
-  }, [message]);
+  }, [content]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (message.trim() && !disabled) {
-      onSend(message.trim());
-      setMessage("");
+  const handleSend = () => {
+    if (content.trim() && !disabled) {
+      onSend(content);
+      setContent("");
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "inherit";
+      }
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e);
+      handleSend();
     }
   };
 
   return (
-    <div>
-      <form onSubmit={handleSubmit} className="p-4">
-        <div className="flex items-end gap-2">
-          <Textarea
-            ref={textareaRef}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask me anything..."
-            disabled={disabled}
-            className="min-h-[60px] max-h-[200px] resize-none bg-secondary/50"
-            rows={1}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={!message.trim() || disabled}
-            className="h-[60px] w-[60px] shrink-0 bg-secondary hover:bg-secondary/80"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
-        <p className="text-xs text-muted-foreground mt-2 text-center">
-          Press Enter to send, Shift + Enter for new line
-        </p>
-      </form>
+    <div className={cn("relative flex items-end w-full", className)}>
+      <Textarea
+        ref={textareaRef}
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder="Ask me anything..."
+        className={cn(
+          "min-h-[54px] w-full resize-none rounded-2xl border border-border bg-background py-4 pl-4 pr-12 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 scrollbar-hide transition-all",
+          content.length > 0 ? "bg-background/80 backdrop-blur-sm" : ""
+        )}
+        disabled={disabled}
+        rows={1}
+      />
+      <Button
+        onClick={handleSend}
+        disabled={disabled || !content.trim()}
+        size="icon"
+        className={cn(
+          "absolute right-2 bottom-2 h-9 w-9 rounded-full transition-all shadow-sm",
+          // Only show button when there is text
+          !content.trim()
+            ? "opacity-0 scale-75 pointer-events-none"
+            : "opacity-100 scale-100"
+        )}
+      >
+        <Send className="h-4 w-4" />
+        <span className="sr-only">Send message</span>
+      </Button>
     </div>
   );
 };

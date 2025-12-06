@@ -239,3 +239,7 @@ async def github_login(data: OAuthLoginRequest):
         
     token = create_access_token({"sub": user.email})
     return {"access_token": token, "token_type": "bearer"}
+
+@router.get("/me", tags=["Authentication"])
+async def read_users_me(user: User = Depends(get_current_user)):
+    return user

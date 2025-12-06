@@ -1,5 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 
@@ -7,6 +13,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   token: string | null;
   userEmail: string | null;
+  firstName: string | null;
   login: (email: string, pass: string) => Promise<void>;
   register: (
     email: string,
@@ -33,7 +40,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.getItem("token")
   );
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [firstName, setFirstName] = useState<string | null>(null);
   const isAuthenticated = !!token;
+
+  // Fetch user profile to get the name
+  const fetchUser = async () => {
+    try {
+      // We need to implement this endpoint in backend later,
+      // OR just decode the JWT if name is in there.
+      // For now, let's assume the /me endpoint exists or fail silently.
+      const res = await api.get("/api/auth/me");
+      setUserEmail(res.data.email);
+      setFirstName(res.data.first_name);
+    } catch (error) {
+      console.error("Failed to fetch user details");
+    }
+  };
+
+  useEffect(() => {
+    if (token) {
+      fetchUser();
+    }
+  }, [token]);
 
   const login = async (email: string, pass: string) => {
     try {
@@ -41,6 +69,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const accessToken = res.data.access_token;
       localStorage.setItem("token", accessToken);
       setToken(accessToken);
+
+      await fetchUser(); // Update name immediately
       toast.success("Welcome back!");
     } catch (error: any) {
       if (error.response?.status === 403) {
@@ -84,6 +114,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const accessToken = res.data.access_token;
       localStorage.setItem("token", accessToken);
       setToken(accessToken);
+
+      await fetchUser(); // Get name
       toast.success("Verified! Logging in...");
     } catch (error: any) {
       toast.error("Invalid OTP");
@@ -119,6 +151,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const jwt = res.data.access_token;
       localStorage.setItem("token", jwt);
       setToken(jwt);
+      await fetchUser();
       toast.success("Logged in with Google!");
     } catch (e) {
       toast.error("Google Login Failed");
@@ -132,6 +165,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const jwt = res.data.access_token;
       localStorage.setItem("token", jwt);
       setToken(jwt);
+      await fetchUser();
       toast.success("Logged in with GitHub!");
     } catch (e) {
       toast.error("GitHub Login Failed");
@@ -143,6 +177,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem("token");
     setToken(null);
     setUserEmail(null);
+    setFirstName(null);
     toast.info("Logged out");
   };
 
@@ -152,6 +187,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         isAuthenticated,
         token,
         userEmail,
+        firstName,
         login,
         register,
         verifyEmail,
@@ -167,7 +203,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) throw new Error("useAuth must be used within an AuthProvider");

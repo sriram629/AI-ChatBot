@@ -45,3 +45,5 @@ server/.env
 # IDE settings
 .vscode/
 .idea/
+
+.env

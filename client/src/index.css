@@ -1,0 +1,188 @@
+/* 1. The New Tailwind v4 Import */
+@import "tailwindcss";
+
+/* 2. Configure the Theme Variables
+   This tells Tailwind: "When I use bg-background, use the variable --background"
+*/
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar-background: var(--sidebar-background);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-radius: var(--radius);
+
+  --animate-float: float 8s ease-in-out infinite;
+  --animate-float-delayed: float 8s ease-in-out infinite 3s;
+  --animate-float-slow: float 10s ease-in-out infinite 1.5s;
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0px) rotate(0deg);
+    }
+    50% {
+      transform: translateY(-30px) rotate(8deg);
+    }
+  }
+}
+
+/* 3. Define the actual values (Dark Mode Default) 
+   NOTE: I added 'hsl(...)' around your numbers so they are valid colors.
+*/
+:root {
+  --background: hsl(0 0% 7%);
+  --foreground: hsl(0 0% 98%);
+
+  --card: hsl(0 0% 10%);
+  --card-foreground: hsl(0 0% 98%);
+
+  --popover: hsl(0 0% 10%);
+  --popover-foreground: hsl(0 0% 98%);
+
+  --primary: hsl(195 100% 50%);
+  --primary-foreground: hsl(0 0% 0%);
+
+  --secondary: hsl(0 0% 18%);
+  --secondary-foreground: hsl(0 0% 98%);
+
+  --muted: hsl(0 0% 15%);
+  --muted-foreground: hsl(0 0% 60%);
+
+  --accent: hsl(195 100% 50%);
+  --accent-foreground: hsl(0 0% 0%);
+
+  --destructive: hsl(0 84% 60%);
+  --destructive-foreground: hsl(0 0% 100%);
+
+  --border: hsl(0 0% 20%);
+  --input: hsl(0 0% 15%);
+  --ring: hsl(195 100% 50%);
+
+  --radius: 0.75rem;
+
+  --sidebar-background: hsl(0 0% 10%);
+  --sidebar-foreground: hsl(0 0% 98%);
+  --sidebar-primary: hsl(195 100% 50%);
+  --sidebar-primary-foreground: hsl(0 0% 0%);
+  --sidebar-accent: hsl(0 0% 15%);
+  --sidebar-accent-foreground: hsl(0 0% 98%);
+  --sidebar-border: hsl(0 0% 20%);
+  --sidebar-ring: hsl(195 100% 50%);
+}
+
+/* 4. Light Mode Overrides */
+.light {
+  --background: hsl(0 0% 99%);
+  --foreground: hsl(220 13% 13%);
+
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(220 13% 13%);
+
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(220 13% 13%);
+
+  --primary: hsl(217 91% 60%);
+  --primary-foreground: hsl(0 0% 100%);
+
+  --secondary: hsl(220 14% 96%);
+  --secondary-foreground: hsl(220 13% 13%);
+
+  --muted: hsl(220 14% 96%);
+  --muted-foreground: hsl(220 9% 46%);
+
+  --accent: hsl(217 91% 60%);
+  --accent-foreground: hsl(0 0% 100%);
+
+  --destructive: hsl(0 84% 60%);
+  --destructive-foreground: hsl(0 0% 100%);
+
+  --border: hsl(220 13% 91%);
+  --input: hsl(220 13% 91%);
+  --ring: hsl(217 91% 60%);
+
+  --sidebar-background: hsl(0 0% 98%);
+  --sidebar-foreground: hsl(220 13% 13%);
+  --sidebar-primary: hsl(217 91% 60%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(220 14% 96%);
+  --sidebar-accent-foreground: hsl(220 13% 13%);
+  --sidebar-border: hsl(220 13% 91%);
+  --sidebar-ring: hsl(217 91% 60%);
+}
+
+/* 5. Base Styles */
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-semibold tracking-tight;
+  }
+}
+
+/* 6. Utility Classes */
+@utility glass-morphism {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  padding: 1em 0;
+  margin: 1em 0 !important;
+}
+
+.katex {
+  font-size: 1.1em !important; /* Make math slightly larger/readable */
+  line-height: 1.2 !important;
+}
+
+/* Ensure inline math doesn't break line height */
+.katex-html {
+  overflow-x: auto;
+}

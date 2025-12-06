@@ -1,0 +1,21 @@
+# System files
+.DS_Store
+Thumbs.db
+
+# Node / Frontend
+node_modules/
+client/node_modules/
+client/dist/
+client/.env
+client/.env.local
+
+# Python / Backend
+venv/
+server/venv/
+__pycache__/
+*.py[cod]
+server/.env
+
+# IDE settings
+.vscode/
+.idea/

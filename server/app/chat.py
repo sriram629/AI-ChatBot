@@ -70,6 +70,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
 
     await websocket.accept()
     
+    # Initial Context Load
     history_msgs = await ChatMessage.find(ChatMessage.session_id == session_id).sort(+ChatMessage.timestamp).to_list()
     valid_history = []
     for m in history_msgs:
@@ -89,17 +90,17 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
             # --- CASE 1: NEW MESSAGE ---
             if msg_type == "message":
                 user_msg_content = payload.get("message")
-                temp_id = payload.get("tempId") # 🟢 Capture Temp ID
+                temp_id = payload.get("tempId")
                 
                 if not user_msg_content: continue
 
-                # Save to DB (Generates Real ID)
+                # Save to DB
                 user_msg = ChatMessage(
                     session_id=session_id, user_email=user.email, role="user", content=user_msg_content
                 )
                 await user_msg.insert()
 
-                # 🟢 SEND ID UPDATE BACK TO FRONTEND
+                # Send ID Update
                 if temp_id:
                     await websocket.send_text(json.dumps({
                         "type": "id_update",
@@ -118,10 +119,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
                     new_content = payload.get("newContent")
                     if not msg_id or not new_content: continue
 
-                    # Validate ID format to prevent crash
-                    if not PydanticObjectId.is_valid(msg_id):
-                        print(f"❌ Invalid ID format: {msg_id}")
-                        continue
+                    if not PydanticObjectId.is_valid(msg_id): continue
 
                     target_msg = await ChatMessage.get(PydanticObjectId(msg_id))
                     if not target_msg or target_msg.user_email != user.email: continue
@@ -130,7 +128,6 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
                     await target_msg.save()
                     user_msg_content = new_content
 
-                    # Rewind History
                     await ChatMessage.find(
                         ChatMessage.session_id == session_id,
                         ChatMessage.timestamp > target_msg.timestamp
@@ -151,6 +148,49 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
 
                 except Exception as edit_error:
                     print(f"❌ Edit Error: {edit_error}")
+                    continue
+
+            # --- CASE 3: REGENERATE (NEW) ---
+            elif msg_type == "regenerate":
+                try:
+                    # 1. Find the last AI message
+                    last_ai_msg = await ChatMessage.find(
+                        ChatMessage.session_id == session_id
+                    ).sort(-ChatMessage.timestamp).first_or_none()
+
+                    if not last_ai_msg or last_ai_msg.role != "assistant":
+                        print("❌ Regenerate failed: Last message is not AI")
+                        continue
+
+                    # 2. Find the user message before it (The Prompt)
+                    user_prompt_msg = await ChatMessage.find(
+                        ChatMessage.session_id == session_id,
+                        ChatMessage.timestamp < last_ai_msg.timestamp
+                    ).sort(-ChatMessage.timestamp).first_or_none()
+
+                    if not user_prompt_msg: continue
+                    
+                    user_msg_content = user_prompt_msg.content
+
+                    # 3. Delete the AI message (Rewind)
+                    await last_ai_msg.delete()
+
+                    # 4. Rebuild Context (Up to the user prompt)
+                    fresh_history = await ChatMessage.find(
+                        ChatMessage.session_id == session_id,
+                        ChatMessage.timestamp < user_prompt_msg.timestamp
+                    ).sort(+ChatMessage.timestamp).to_list()
+
+                    new_context = []
+                    for m in fresh_history:
+                        if m.content and m.content.strip():
+                            new_context.append({"role": "user" if m.role == "user" else "model", "parts": [m.content]})
+                    
+                    chat_session = model.start_chat(history=new_context, enable_automatic_function_calling=True)
+                    print(f"🔄 Regenerating response for: {user_msg_content[:20]}...")
+
+                except Exception as regen_error:
+                    print(f"❌ Regenerate Error: {regen_error}")
                     continue
 
             # --- COMMON AI GENERATION ---
@@ -192,7 +232,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
 
     except WebSocketDisconnect:
         pass
-    except Exception:
+    except Exception as e:
         try:
             await websocket.close()
         except:

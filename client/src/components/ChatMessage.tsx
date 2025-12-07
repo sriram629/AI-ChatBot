@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Copy, Pencil, Check, X } from "lucide-react";
+import { Copy, Pencil, Check, X, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,6 +18,7 @@ interface ChatMessageProps {
   content: string;
   isLoading?: boolean;
   onEdit?: (newContent: string) => void;
+  onRegenerate?: () => void;
 }
 
 const ChatMessage = ({
@@ -25,20 +26,17 @@ const ChatMessage = ({
   content,
   isLoading,
   onEdit,
+  onRegenerate,
 }: ChatMessageProps) => {
   const { toast } = useToast();
   const isUser = role === "user";
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(content);
-
-  // 🟢 1. RESTORED: Loading Text State
   const [loadingText, setLoadingText] = useState("Thinking...");
 
-  // 🟢 2. RESTORED: Generic Text Cycle
   useEffect(() => {
     if (!isLoading || content.length > 0) return;
 
-    // These are generic enough for ANY request (Math, Code, Writing, Image)
     const texts = [
       "Thinking...",
       "Processing...",
@@ -51,7 +49,7 @@ const ChatMessage = ({
     const interval = setInterval(() => {
       index = (index + 1) % texts.length;
       setLoadingText(texts[index]);
-    }, 3000); // Switch text every 3 seconds
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [isLoading, content]);
@@ -134,7 +132,6 @@ const ChatMessage = ({
               <div className="whitespace-pre-wrap">{content}</div>
             ) : (
               <>
-                {/* 🟢 3. RESTORED: Show Text Cycle */}
                 {isLoading && content.length === 0 ? (
                   <div className="flex items-center gap-2 text-muted-foreground py-2 px-1">
                     <span className="text-sm font-medium animate-pulse">
@@ -236,6 +233,16 @@ const ChatMessage = ({
                           </td>
                         );
                       },
+                      img({ src, alt }) {
+                        return (
+                          <img
+                            src={src}
+                            alt={alt}
+                            className="rounded-lg max-w-full h-auto my-4 border border-border"
+                            loading="lazy"
+                          />
+                        );
+                      },
                       pre({ children }) {
                         return (
                           <pre className="my-6 overflow-hidden rounded-lg">
@@ -314,6 +321,18 @@ const ChatMessage = ({
             >
               <Copy className="h-3 w-3 text-muted-foreground" />
             </Button>
+
+            {!isUser && onRegenerate && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={onRegenerate}
+              >
+                <RefreshCw className="h-3 w-3 text-muted-foreground" />
+              </Button>
+            )}
+
             {isUser && onEdit && (
               <Button
                 variant="ghost"

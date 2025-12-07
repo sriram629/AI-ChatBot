@@ -30,7 +30,7 @@ export const useChatSocket = (chatId: string | undefined) => {
     if (pendingMessage.current) {
       setMessages([
         {
-          id: Date.now().toString(), // Temp ID
+          id: Date.now().toString(),
           role: "user",
           content: pendingMessage.current,
         },
@@ -63,7 +63,6 @@ export const useChatSocket = (chatId: string | undefined) => {
     ws.onopen = () => {
       if (pendingMessage.current) {
         const tempId = Date.now().toString();
-        // Send pending message with tempId
         ws.send(
           JSON.stringify({
             type: "message",
@@ -72,7 +71,6 @@ export const useChatSocket = (chatId: string | undefined) => {
           })
         );
 
-        // Update UI with tempId so we can swap it later
         setMessages([
           {
             id: tempId,
@@ -88,7 +86,6 @@ export const useChatSocket = (chatId: string | undefined) => {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
-      // 🟢 1. HANDLE ID UPDATE (Swap Temp ID -> Real ID)
       if (data.type === "id_update") {
         setMessages((prev) =>
           prev.map((msg) => {
@@ -124,13 +121,10 @@ export const useChatSocket = (chatId: string | undefined) => {
 
   const sendMessage = useCallback(
     async (content: string) => {
-      const tempId = Date.now().toString(); // Generate Temp ID
-
-      // Optimistic Update
+      const tempId = Date.now().toString();
       setMessages((prev) => [...prev, { id: tempId, role: "user", content }]);
 
       if (chatId && socketRef.current?.readyState === WebSocket.OPEN) {
-        // Send with Temp ID
         socketRef.current.send(
           JSON.stringify({
             type: "message",
@@ -178,5 +172,32 @@ export const useChatSocket = (chatId: string | undefined) => {
     );
   }, []);
 
-  return { messages, sendMessage, editMessage, isStreaming, isConnecting };
+  // 🆕 REGENERATE FUNCTION
+  const regenerateResponse = useCallback(() => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      toast.error("Connection lost.");
+      return;
+    }
+
+    // Optimistic Update: Remove the last AI message
+    setMessages((prev) => {
+      // Double check the last message is AI
+      if (prev.length > 0 && prev[prev.length - 1].role === "assistant") {
+        return prev.slice(0, -1);
+      }
+      return prev;
+    });
+
+    // Send Signal
+    socketRef.current.send(JSON.stringify({ type: "regenerate" }));
+  }, []);
+
+  return {
+    messages,
+    sendMessage,
+    editMessage,
+    regenerateResponse,
+    isStreaming,
+    isConnecting,
+  };
 };

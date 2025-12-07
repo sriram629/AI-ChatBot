@@ -10,7 +10,6 @@ import ChatInput from "@/components/ChatInput";
 import logo from "@/assets/transparent-logo.png";
 import { useChatSocket } from "@/hooks/useChatSocket";
 import axios from "axios";
-import { cn } from "@/lib/utils";
 
 const Chat = () => {
   const navigate = useNavigate();
@@ -45,14 +44,21 @@ const Chat = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const { messages, sendMessage, editMessage, isStreaming, isConnecting } =
-    useChatSocket(chatId);
+  // 🟢 Destructure regenerateResponse
+  const {
+    messages,
+    sendMessage,
+    editMessage,
+    regenerateResponse,
+    isStreaming,
+    isConnecting,
+  } = useChatSocket(chatId);
+
   const [autoScroll, setAutoScroll] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-Create Session logic
   useEffect(() => {
     if (isAuthenticated && !chatId) {
       const createSession = async () => {
@@ -69,7 +75,6 @@ const Chat = () => {
           console.error(e);
         }
       };
-      // createSession(); // Disabled auto-create for now based on previous requirements
     }
   }, [isAuthenticated, chatId, navigate, token]);
 
@@ -228,29 +233,41 @@ const Chat = () => {
                     </div>
                   )}
 
-                  {messages.map((message, index) => (
-                    <ChatMessage
-                      key={message.id || index}
-                      role={message.role}
-                      content={message.content}
-                      isLoading={
-                        isStreaming &&
-                        index === messages.length - 1 &&
-                        message.role === "assistant"
-                      }
-                      onEdit={
-                        message.role === "user"
-                          ? (newContent) =>
-                              handleEditMessage(message.id, newContent)
-                          : undefined
-                      }
-                    />
-                  ))}
+                  {messages.map((message, index) => {
+                    const isLastMessage = index === messages.length - 1;
+                    const isLoading =
+                      isStreaming &&
+                      isLastMessage &&
+                      message.role === "assistant";
+                    // 🟢 Show Regenerate only on last AI message, if not loading
+                    const canRegenerate =
+                      isLastMessage &&
+                      message.role === "assistant" &&
+                      !isStreaming;
+
+                    return (
+                      <ChatMessage
+                        key={message.id || index}
+                        role={message.role}
+                        content={message.content}
+                        isLoading={isLoading}
+                        onEdit={
+                          message.role === "user"
+                            ? (newContent) =>
+                                handleEditMessage(message.id, newContent)
+                            : undefined
+                        }
+                        // 🟢 Pass the function
+                        onRegenerate={
+                          canRegenerate ? regenerateResponse : undefined
+                        }
+                      />
+                    );
+                  })}
                   <div ref={messagesEndRef} />
                 </div>
               </ScrollArea>
 
-              {/* 🟢 CENTERED SCROLL BUTTON */}
               {showScrollButton && (
                 <Button
                   onClick={scrollToBottom}

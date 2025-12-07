@@ -4,44 +4,38 @@ from .auth import get_ws_user, get_current_user
 from .models import ChatMessage, ChatSession, User
 import os
 import json
-import urllib.parse
-import random
+import base64
+import httpx
 import google.generativeai as genai
 from datetime import datetime
+from beanie import PydanticObjectId
 
 router = APIRouter()
 
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+IMAGE_API_URL = "https://router.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+HF_HEADERS = {"Authorization": f"Bearer {os.getenv('HF_API_KEY')}"}
 
 def generate_image_tool(prompt: str):
-    """Generates an image URL using Pollinations.ai."""
     print(f"🎨 Tool Triggered: {prompt}")
     try:
-        encoded_prompt = urllib.parse.quote(prompt)
-        seed = random.randint(1, 100000)
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?seed={seed}&nologo=true"
-        
-        return f"![Generated Image]({image_url})"
-
+        response = httpx.post(
+            IMAGE_API_URL, 
+            headers=HF_HEADERS, 
+            json={"inputs": prompt}, 
+            timeout=60.0 
+        )
+        if response.status_code != 200:
+            print(f"❌ HF Error Body: {response.text}")
+            return f"Error: Image generation failed ({response.status_code})"
+            
+        image_data = base64.b64encode(response.content).decode("utf-8")
+        return f"Image generated. Display this: ![Generated Image](data:image/jpeg;base64,{image_data})"
     except Exception as e:
-        return f"Error generating image: {str(e)}"
+        return f"Error: {str(e)}"
 
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 tools_config = [generate_image_tool]
-
-SYSTEM_PROMPT = """
-You are a helpful AI assistant.
-When you use the 'generate_image_tool', the tool will return a Markdown Image string (like ![alt](url)).
-You MUST output this Markdown string exactly as is.
-DO NOT wrap it in code blocks (```).
-DO NOT escape the exclamation mark (don't type \!).
-Just display the image directly to the user.
-"""
-
-model = genai.GenerativeModel(
-    model_name='gemini-2.5-flash',
-    tools=tools_config,
-    system_instruction=SYSTEM_PROMPT
-)
+model = genai.GenerativeModel(model_name='gemini-2.5-flash', tools=tools_config)
 
 @router.post("/sessions", response_model=ChatSession, tags=["Chat"])
 async def create_session(user: User = Depends(get_current_user)):
@@ -77,30 +71,89 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
     await websocket.accept()
     
     history_msgs = await ChatMessage.find(ChatMessage.session_id == session_id).sort(+ChatMessage.timestamp).to_list()
-    
     valid_history = []
     for m in history_msgs:
         if m.content and m.content.strip():
              valid_history.append({"role": "user" if m.role == "user" else "model", "parts": [m.content]})
 
-   
     chat_session = model.start_chat(history=valid_history, enable_automatic_function_calling=True)
 
     try:
         while True:
             data = await websocket.receive_text()
             payload = json.loads(data)
-            user_msg_content = payload.get("message")
+            
+            msg_type = payload.get("type", "message")
+            user_msg_content = ""
 
-            if not user_msg_content: continue
+            # --- CASE 1: NEW MESSAGE ---
+            if msg_type == "message":
+                user_msg_content = payload.get("message")
+                temp_id = payload.get("tempId") # 🟢 Capture Temp ID
+                
+                if not user_msg_content: continue
 
-            await ChatMessage(
-                session_id=session_id, user_email=user.email, role="user", content=user_msg_content
-            ).insert()
+                # Save to DB (Generates Real ID)
+                user_msg = ChatMessage(
+                    session_id=session_id, user_email=user.email, role="user", content=user_msg_content
+                )
+                await user_msg.insert()
 
-            if session.title == "New Chat":
-                session.title = user_msg_content[:40]
-                await session.save()
+                # 🟢 SEND ID UPDATE BACK TO FRONTEND
+                if temp_id:
+                    await websocket.send_text(json.dumps({
+                        "type": "id_update",
+                        "tempId": temp_id,
+                        "realId": str(user_msg.id)
+                    }))
+
+                if session.title == "New Chat":
+                    session.title = user_msg_content[:40]
+                    await session.save()
+
+            # --- CASE 2: EDIT MESSAGE ---
+            elif msg_type == "edit":
+                try:
+                    msg_id = payload.get("messageId")
+                    new_content = payload.get("newContent")
+                    if not msg_id or not new_content: continue
+
+                    # Validate ID format to prevent crash
+                    if not PydanticObjectId.is_valid(msg_id):
+                        print(f"❌ Invalid ID format: {msg_id}")
+                        continue
+
+                    target_msg = await ChatMessage.get(PydanticObjectId(msg_id))
+                    if not target_msg or target_msg.user_email != user.email: continue
+                    
+                    target_msg.content = new_content
+                    await target_msg.save()
+                    user_msg_content = new_content
+
+                    # Rewind History
+                    await ChatMessage.find(
+                        ChatMessage.session_id == session_id,
+                        ChatMessage.timestamp > target_msg.timestamp
+                    ).delete()
+
+                    # Rebuild Context
+                    fresh_history = await ChatMessage.find(
+                        ChatMessage.session_id == session_id,
+                        ChatMessage.timestamp < target_msg.timestamp
+                    ).sort(+ChatMessage.timestamp).to_list()
+
+                    new_context = []
+                    for m in fresh_history:
+                        if m.content and m.content.strip():
+                            new_context.append({"role": "user" if m.role == "user" else "model", "parts": [m.content]})
+                    
+                    chat_session = model.start_chat(history=new_context, enable_automatic_function_calling=True)
+
+                except Exception as edit_error:
+                    print(f"❌ Edit Error: {edit_error}")
+                    continue
+
+            # --- COMMON AI GENERATION ---
             session.updated_at = datetime.utcnow()
             await session.save()
 
@@ -110,13 +163,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
             try:
                 response = await chat_session.send_message_async(user_msg_content)
                 
-                # Iterate parts to handle text chunks
                 if response.parts:
                     for part in response.parts:
                         text_chunk = part.text
                         if text_chunk:
                             clean_chunk = text_chunk.replace(r"\!", "!")
-                            
                             full_response += clean_chunk
                             await websocket.send_text(json.dumps({
                                 "type": "chunk", 
@@ -128,7 +179,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
                     await websocket.send_text(json.dumps({"type": "chunk", "content": fallback}))
 
             except Exception as e:
-                print(f"AI Error: {e}")
+                print(f"❌ AI Error: {e}")
                 err_msg = "**Error:** I couldn't process that request."
                 await websocket.send_text(json.dumps({"type": "chunk", "content": err_msg}))
                 full_response = err_msg

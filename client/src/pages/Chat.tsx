@@ -2,23 +2,25 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowDown, LogOut, PanelLeftOpen } from "lucide-react";
+import { Menu, X, ArrowDown, LogOut, PanelLeftOpen } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import ChatSidebar from "@/components/ChatSidebar";
 import ChatMessage from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
 import logo from "@/assets/transparent-logo.png";
 import { useChatSocket } from "@/hooks/useChatSocket";
+import axios from "axios";
 import { cn } from "@/lib/utils";
 
 const Chat = () => {
   const navigate = useNavigate();
   const { chatId } = useParams();
-  // 🟢 Get firstName
-  const { isAuthenticated, logout, firstName } = useAuth();
+  const { isAuthenticated, logout, firstName, userEmail, token } = useAuth();
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleResize = () => {
@@ -30,12 +32,46 @@ const Chat = () => {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const { messages, sendMessage, isStreaming, isConnecting } =
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        profileRef.current &&
+        !profileRef.current.contains(event.target as Node)
+      ) {
+        setIsProfileOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const { messages, sendMessage, editMessage, isStreaming, isConnecting } =
     useChatSocket(chatId);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-Create Session logic
+  useEffect(() => {
+    if (isAuthenticated && !chatId) {
+      const createSession = async () => {
+        try {
+          const res = await axios.post(
+            "http://127.0.0.1:8000/api/chat/sessions",
+            {},
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
+          navigate(`/chat/${res.data.session_id}`, { replace: true });
+        } catch (e) {
+          console.error(e);
+        }
+      };
+      // createSession(); // Disabled auto-create for now based on previous requirements
+    }
+  }, [isAuthenticated, chatId, navigate, token]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -62,14 +98,20 @@ const Chat = () => {
     setAutoScroll(true);
   };
 
+  const handleEditMessage = (id: string, newContent: string) => {
+    editMessage(id, newContent);
+    setAutoScroll(true);
+  };
+
   if (!isAuthenticated) return null;
 
-  // 🟢 Logic to decide UI state
   const isNewChat = !isConnecting && messages.length === 0;
+  const userInitial = firstName
+    ? firstName.charAt(0).toUpperCase()
+    : userEmail?.charAt(0).toUpperCase();
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
-      {/* SIDEBAR */}
       {!isMobile && (
         <ChatSidebar
           isOpen={sidebarOpen}
@@ -78,7 +120,6 @@ const Chat = () => {
         />
       )}
 
-      {/* MOBILE OVERLAY */}
       {isMobile && sidebarOpen && (
         <div
           className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm"
@@ -97,9 +138,7 @@ const Chat = () => {
         </div>
       )}
 
-      {/* MAIN CONTENT AREA */}
       <div className="flex flex-col flex-1 h-full min-w-0 bg-background relative transition-all duration-300">
-        {/* Header (Fixed Height, No Shrink) */}
         <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-20 h-16 shrink-0">
           <div className="flex items-center gap-3">
             {isMobile && (
@@ -113,29 +152,50 @@ const Chat = () => {
             )}
             <h1 className="text-lg font-semibold truncate">AI Chat</h1>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="relative" ref={profileRef}>
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => {
-                logout();
-                navigate("/login");
-              }}
+              className="rounded-full h-9 w-9 bg-secondary/80 border border-border overflow-hidden"
+              onClick={() => setIsProfileOpen(!isProfileOpen)}
             >
-              <LogOut className="h-5 w-5" />
+              <span className="text-sm font-semibold">{userInitial}</span>
             </Button>
+
+            {isProfileOpen && (
+              <div className="absolute right-0 top-12 w-64 bg-card border border-border shadow-lg rounded-xl p-2 z-50 animate-in fade-in slide-in-from-top-2">
+                <div className="px-3 py-2 border-b border-border/50 mb-1">
+                  <p className="font-semibold text-sm truncate">
+                    {firstName || "User"}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {userEmail}
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    logout();
+                    navigate("/login");
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Log out
+                </button>
+              </div>
+            )}
           </div>
         </header>
 
-        {/* CONTENT BODY (Dynamic Layout) */}
         <div className="flex-1 relative flex flex-col min-h-0">
           {isNewChat ? (
-            // 🟢 STATE 1: NEW CHAT (Centered View)
             <div className="flex-1 flex flex-col items-center justify-center p-4">
               <div className="flex flex-col items-center gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full max-w-2xl">
                 <img src={logo} alt="AI" className="w-20 h-20" />
-                <h2 className="text-3xl font-semibold text-foreground">
-                  Hi {firstName ? firstName.toUpperCase() : ""}
+                <h2 className="text-3xl font-semibold text-foreground text-center">
+                  Hi {firstName ? firstName.toUpperCase() : "THERE"}
                 </h2>
                 <div className="w-full mt-2">
                   <ChatInput
@@ -147,7 +207,6 @@ const Chat = () => {
               </div>
             </div>
           ) : (
-            // 🟢 STATE 2: ONGOING CHAT (Scrollable Messages + Floating Input)
             <>
               <ScrollArea
                 className="flex-1 h-full w-full"
@@ -155,7 +214,6 @@ const Chat = () => {
                 viewportRef={scrollViewportRef}
               >
                 <div className="w-full max-w-5xl mx-auto px-4 md:px-8 py-6 pb-32 flex flex-col gap-6">
-                  {/* Skeletons */}
                   {isConnecting && messages.length === 0 && (
                     <div className="space-y-8 p-4 opacity-50">
                       {[1, 2].map((i) => (
@@ -170,7 +228,6 @@ const Chat = () => {
                     </div>
                   )}
 
-                  {/* Message List */}
                   {messages.map((message, index) => (
                     <ChatMessage
                       key={message.id || index}
@@ -181,25 +238,30 @@ const Chat = () => {
                         index === messages.length - 1 &&
                         message.role === "assistant"
                       }
+                      onEdit={
+                        message.role === "user"
+                          ? (newContent) =>
+                              handleEditMessage(message.id, newContent)
+                          : undefined
+                      }
                     />
                   ))}
                   <div ref={messagesEndRef} />
                 </div>
               </ScrollArea>
 
-              {/* Scroll Button */}
+              {/* 🟢 CENTERED SCROLL BUTTON */}
               {showScrollButton && (
                 <Button
                   onClick={scrollToBottom}
                   size="icon"
-                  className="absolute bottom-28 right-8 rounded-full shadow-lg z-30 bg-secondary hover:bg-secondary/80 border border-border animate-in fade-in"
+                  className="absolute bottom-32 left-1/2 -translate-x-1/2 rounded-full shadow-lg z-30 bg-secondary hover:bg-secondary/80 border border-border animate-in fade-in"
                 >
                   <ArrowDown className="h-5 w-5" />
                 </Button>
               )}
 
-              {/* Floating Input Area */}
-              <div className="absolute bottom-0 left-0 right-0 p-4 bg-linear-to-t from-background via-background/90 to-transparent z-20 pb-6">
+              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-background via-background/90 to-transparent z-20 pb-6">
                 <div className="max-w-5xl mx-auto w-full">
                   <ChatInput
                     onSend={handleSendMessage}

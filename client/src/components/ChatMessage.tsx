@@ -30,21 +30,29 @@ const ChatMessage = ({
   const isUser = role === "user";
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(content);
+
+  // 🟢 1. RESTORED: Loading Text State
   const [loadingText, setLoadingText] = useState("Thinking...");
 
+  // 🟢 2. RESTORED: Generic Text Cycle
   useEffect(() => {
     if (!isLoading || content.length > 0) return;
+
+    // These are generic enough for ANY request (Math, Code, Writing, Image)
     const texts = [
       "Thinking...",
-      "Calculating...",
-      "Generating math...",
-      "Almost there...",
+      "Processing...",
+      "Analyzing request...",
+      "Generating response...",
+      "Working on it...",
     ];
+
     let index = 0;
     const interval = setInterval(() => {
       index = (index + 1) % texts.length;
       setLoadingText(texts[index]);
-    }, 2500);
+    }, 3000); // Switch text every 3 seconds
+
     return () => clearInterval(interval);
   }, [isLoading, content]);
 
@@ -82,7 +90,7 @@ const ChatMessage = ({
             />
           </div>
           {isLoading && (
-            <div className="absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary animate-spin z-0" />
+            <div className="absolute inset-[-4px] rounded-full border-2 border-primary/30 border-t-primary animate-spin z-0" />
           )}
         </div>
       )}
@@ -126,9 +134,12 @@ const ChatMessage = ({
               <div className="whitespace-pre-wrap">{content}</div>
             ) : (
               <>
+                {/* 🟢 3. RESTORED: Show Text Cycle */}
                 {isLoading && content.length === 0 ? (
-                  <div className="flex items-center gap-2 text-muted-foreground animate-pulse py-2 px-1">
-                    <span className="text-sm font-medium">{loadingText}</span>
+                  <div className="flex items-center gap-2 text-muted-foreground py-2 px-1">
+                    <span className="text-sm font-medium animate-pulse">
+                      {loadingText}
+                    </span>
                   </div>
                 ) : (
                   <ReactMarkdown

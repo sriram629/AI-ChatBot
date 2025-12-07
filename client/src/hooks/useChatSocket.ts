@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -31,7 +30,7 @@ export const useChatSocket = (chatId: string | undefined) => {
     if (pendingMessage.current) {
       setMessages([
         {
-          id: Date.now().toString(),
+          id: Date.now().toString(), // Temp ID
           role: "user",
           content: pendingMessage.current,
         },
@@ -56,7 +55,6 @@ export const useChatSocket = (chatId: string | undefined) => {
 
   useEffect(() => {
     if (!token || !chatId) return;
-
     if (socketRef.current) socketRef.current.close();
 
     const url = getSocketUrl(`/api/chat/ws/${chatId}`);
@@ -64,7 +62,25 @@ export const useChatSocket = (chatId: string | undefined) => {
 
     ws.onopen = () => {
       if (pendingMessage.current) {
-        ws.send(JSON.stringify({ message: pendingMessage.current }));
+        const tempId = Date.now().toString();
+        // Send pending message with tempId
+        ws.send(
+          JSON.stringify({
+            type: "message",
+            message: pendingMessage.current,
+            tempId: tempId,
+          })
+        );
+
+        // Update UI with tempId so we can swap it later
+        setMessages([
+          {
+            id: tempId,
+            role: "user",
+            content: pendingMessage.current,
+          },
+        ]);
+
         pendingMessage.current = null;
       }
     };
@@ -72,7 +88,17 @@ export const useChatSocket = (chatId: string | undefined) => {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
-      if (data.type === "start") {
+      // 🟢 1. HANDLE ID UPDATE (Swap Temp ID -> Real ID)
+      if (data.type === "id_update") {
+        setMessages((prev) =>
+          prev.map((msg) => {
+            if (msg.id === data.tempId) {
+              return { ...msg, id: data.realId };
+            }
+            return msg;
+          })
+        );
+      } else if (data.type === "start") {
         setIsStreaming(true);
         setMessages((prev) => [
           ...prev,
@@ -98,13 +124,20 @@ export const useChatSocket = (chatId: string | undefined) => {
 
   const sendMessage = useCallback(
     async (content: string) => {
-      setMessages((prev) => [
-        ...prev,
-        { id: Date.now().toString(), role: "user", content },
-      ]);
+      const tempId = Date.now().toString(); // Generate Temp ID
+
+      // Optimistic Update
+      setMessages((prev) => [...prev, { id: tempId, role: "user", content }]);
 
       if (chatId && socketRef.current?.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({ message: content }));
+        // Send with Temp ID
+        socketRef.current.send(
+          JSON.stringify({
+            type: "message",
+            message: content,
+            tempId: tempId,
+          })
+        );
         return;
       }
 
@@ -122,5 +155,28 @@ export const useChatSocket = (chatId: string | undefined) => {
     [chatId, token, navigate]
   );
 
-  return { messages, sendMessage, isStreaming, isConnecting };
+  const editMessage = useCallback((messageId: string, newContent: string) => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      toast.error("Connection lost.");
+      return;
+    }
+
+    setMessages((prev) => {
+      const index = prev.findIndex((m) => m.id === messageId);
+      if (index === -1) return prev;
+      const newHistory = prev.slice(0, index + 1);
+      newHistory[index] = { ...newHistory[index], content: newContent };
+      return newHistory;
+    });
+
+    socketRef.current.send(
+      JSON.stringify({
+        type: "edit",
+        messageId: messageId,
+        newContent: newContent,
+      })
+    );
+  }, []);
+
+  return { messages, sendMessage, editMessage, isStreaming, isConnecting };
 };

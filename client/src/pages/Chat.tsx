@@ -2,7 +2,14 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Menu, X, ArrowDown, LogOut, PanelLeftOpen } from "lucide-react";
+import {
+  Menu,
+  X,
+  ArrowDown,
+  LogOut,
+  PanelLeftOpen,
+  User as UserIcon,
+} from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import ChatSidebar from "@/components/ChatSidebar";
 import ChatMessage from "@/components/ChatMessage";
@@ -10,6 +17,7 @@ import ChatInput from "@/components/ChatInput";
 import logo from "@/assets/transparent-logo.png";
 import { useChatSocket } from "@/hooks/useChatSocket";
 import axios from "axios";
+import { cn } from "@/lib/utils";
 
 const Chat = () => {
   const navigate = useNavigate();
@@ -44,12 +52,12 @@ const Chat = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // 🟢 Destructure regenerateResponse
   const {
     messages,
     sendMessage,
     editMessage,
     regenerateResponse,
+    stopGeneration,
     isStreaming,
     isConnecting,
   } = useChatSocket(chatId);
@@ -64,7 +72,7 @@ const Chat = () => {
       const createSession = async () => {
         try {
           const res = await axios.post(
-            "http://127.0.0.1:8000/api/chat/sessions",
+            "[http://127.0.0.1:8000/api/chat/sessions](http://127.0.0.1:8000/api/chat/sessions)",
             {},
             {
               headers: { Authorization: `Bearer ${token}` },
@@ -205,7 +213,8 @@ const Chat = () => {
                 <div className="w-full mt-2">
                   <ChatInput
                     onSend={handleSendMessage}
-                    disabled={isStreaming}
+                    isStreaming={isStreaming}
+                    onStop={stopGeneration}
                     className="shadow-md"
                   />
                 </div>
@@ -239,7 +248,6 @@ const Chat = () => {
                       isStreaming &&
                       isLastMessage &&
                       message.role === "assistant";
-                    // 🟢 Show Regenerate only on last AI message, if not loading
                     const canRegenerate =
                       isLastMessage &&
                       message.role === "assistant" &&
@@ -257,7 +265,6 @@ const Chat = () => {
                                 handleEditMessage(message.id, newContent)
                             : undefined
                         }
-                        // 🟢 Pass the function
                         onRegenerate={
                           canRegenerate ? regenerateResponse : undefined
                         }
@@ -282,7 +289,8 @@ const Chat = () => {
                 <div className="max-w-5xl mx-auto w-full">
                   <ChatInput
                     onSend={handleSendMessage}
-                    disabled={isStreaming}
+                    isStreaming={isStreaming}
+                    onStop={stopGeneration}
                     className="shadow-lg"
                   />
                 </div>

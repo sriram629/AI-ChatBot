@@ -20,13 +20,14 @@ export const useChatSocket = (chatId: string | undefined) => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const pendingMessage = useRef<string | null>(null);
+  const [connectionKey, setConnectionKey] = useState(0);
 
+  // 1. Fetch History
   useEffect(() => {
     if (!token || !chatId) {
       setMessages([]);
       return;
     }
-
     if (pendingMessage.current) {
       setMessages([
         {
@@ -37,7 +38,6 @@ export const useChatSocket = (chatId: string | undefined) => {
       ]);
       return;
     }
-
     setIsConnecting(true);
     api
       .get(`/api/chat/sessions/${chatId}/messages`)
@@ -53,6 +53,7 @@ export const useChatSocket = (chatId: string | undefined) => {
       .finally(() => setIsConnecting(false));
   }, [chatId, token]);
 
+  // 2. Socket Connection
   useEffect(() => {
     if (!token || !chatId) return;
     if (socketRef.current) socketRef.current.close();
@@ -67,18 +68,10 @@ export const useChatSocket = (chatId: string | undefined) => {
           JSON.stringify({
             type: "message",
             message: pendingMessage.current,
-            tempId: tempId,
+            tempId,
           })
         );
-
-        setMessages([
-          {
-            id: tempId,
-            role: "user",
-            content: pendingMessage.current,
-          },
-        ]);
-
+        // We don't setMessages here because sendMessage already did it
         pendingMessage.current = null;
       }
     };
@@ -88,19 +81,22 @@ export const useChatSocket = (chatId: string | undefined) => {
 
       if (data.type === "id_update") {
         setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.id === data.tempId) {
-              return { ...msg, id: data.realId };
-            }
-            return msg;
-          })
+          prev.map((msg) =>
+            msg.id === data.tempId ? { ...msg, id: data.realId } : msg
+          )
         );
       } else if (data.type === "start") {
-        setIsStreaming(true);
-        setMessages((prev) => [
-          ...prev,
-          { id: "ai-response", role: "assistant", content: "" },
-        ]);
+        // Backend confirms it started processing
+        // We ensure a bubble exists (if not created by sendMessage logic yet)
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "assistant" && last.id === "ai-response")
+            return prev; // Already there
+          return [
+            ...prev,
+            { id: "ai-response", role: "assistant", content: "" },
+          ];
+        });
       } else if (data.type === "chunk") {
         setMessages((prev) => {
           const newArr = [...prev];
@@ -110,28 +106,46 @@ export const useChatSocket = (chatId: string | undefined) => {
           }
           return newArr;
         });
+      } else if (data.type === "edit_chunk") {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === data.id
+              ? { ...msg, content: msg.content + data.content }
+              : msg
+          )
+        );
       } else if (data.type === "end") {
         setIsStreaming(false);
       }
     };
 
+    ws.onerror = () => {
+      setIsStreaming(false);
+    };
+
     socketRef.current = ws;
     return () => ws.close();
-  }, [token, chatId]);
+  }, [token, chatId, connectionKey]);
 
+  // 3. Send Message
   const sendMessage = useCallback(
     async (content: string) => {
       const tempId = Date.now().toString();
       setMessages((prev) => [...prev, { id: tempId, role: "user", content }]);
 
+      // 🟢 START LOADING IMMEDIATELY (So Stop button appears)
+      setIsStreaming(true);
+
       if (chatId && socketRef.current?.readyState === WebSocket.OPEN) {
         socketRef.current.send(
-          JSON.stringify({
-            type: "message",
-            message: content,
-            tempId: tempId,
-          })
+          JSON.stringify({ type: "message", message: content, tempId })
         );
+        return;
+      }
+
+      if (chatId && socketRef.current?.readyState !== WebSocket.OPEN) {
+        pendingMessage.current = content;
+        setConnectionKey((prev) => prev + 1);
         return;
       }
 
@@ -143,6 +157,7 @@ export const useChatSocket = (chatId: string | undefined) => {
         } catch (e) {
           toast.error("Failed to start chat");
           pendingMessage.current = null;
+          setIsStreaming(false);
         }
       }
     },
@@ -154,7 +169,7 @@ export const useChatSocket = (chatId: string | undefined) => {
       toast.error("Connection lost.");
       return;
     }
-
+    setIsStreaming(true); // Start loading UI
     setMessages((prev) => {
       const index = prev.findIndex((m) => m.id === messageId);
       if (index === -1) return prev;
@@ -162,34 +177,67 @@ export const useChatSocket = (chatId: string | undefined) => {
       newHistory[index] = { ...newHistory[index], content: newContent };
       return newHistory;
     });
-
     socketRef.current.send(
-      JSON.stringify({
-        type: "edit",
-        messageId: messageId,
-        newContent: newContent,
-      })
+      JSON.stringify({ type: "edit", messageId, newContent })
     );
   }, []);
 
-  // 🆕 REGENERATE FUNCTION
   const regenerateResponse = useCallback(() => {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-      toast.error("Connection lost.");
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN)
       return;
-    }
-
-    // Optimistic Update: Remove the last AI message
-    setMessages((prev) => {
-      // Double check the last message is AI
-      if (prev.length > 0 && prev[prev.length - 1].role === "assistant") {
-        return prev.slice(0, -1);
-      }
-      return prev;
-    });
-
-    // Send Signal
+    setIsStreaming(true); // Start loading UI
+    setMessages((prev) =>
+      prev.length > 0 && prev[prev.length - 1].role === "assistant"
+        ? prev.slice(0, -1)
+        : prev
+    );
     socketRef.current.send(JSON.stringify({ type: "regenerate" }));
+  }, []);
+
+  // 🟢 IMPROVED STOP FUNCTION
+  const stopGeneration = useCallback(() => {
+    if (socketRef.current) {
+      socketRef.current.close();
+      setIsStreaming(false);
+
+      setMessages((prev) => {
+        if (prev.length === 0) return prev;
+
+        const lastMsg = prev[prev.length - 1];
+
+        // CASE 1: AI has started typing (or is just an empty bubble)
+        if (lastMsg.role === "assistant") {
+          // If it's empty, user stopped during "Thinking..."
+          const newContent =
+            lastMsg.content.trim() === ""
+              ? "Generation stopped by user."
+              : lastMsg.content;
+
+          // Update the last message
+          const newArr = [...prev];
+          newArr[newArr.length - 1] = { ...lastMsg, content: newContent };
+          return newArr;
+        }
+
+        // CASE 2: Last message was User (AI hasn't even started "Thinking" bubble yet)
+        if (lastMsg.role === "user") {
+          return [
+            ...prev,
+            {
+              id: "stopped-" + Date.now(),
+              role: "assistant",
+              content: "Generation stopped by user.",
+            },
+          ];
+        }
+
+        return prev;
+      });
+
+      // Force reconnect for next message
+      setConnectionKey((prev) => prev + 1);
+      toast.info("Stopped");
+    }
   }, []);
 
   return {
@@ -197,6 +245,7 @@ export const useChatSocket = (chatId: string | undefined) => {
     sendMessage,
     editMessage,
     regenerateResponse,
+    stopGeneration,
     isStreaming,
     isConnecting,
   };

@@ -49,6 +49,7 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId }: ChatSidebarProps) => {
         isOpen ? "w-72" : "w-[60px]"
       )}
     >
+      {/* HEADER */}
       <div
         className={cn(
           "h-16 flex items-center border-b border-border/50 transition-all duration-300",
@@ -57,8 +58,9 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId }: ChatSidebarProps) => {
       >
         {isOpen ? (
           <>
-            <div className="flex items-center gap-2 font-semibold text-lg animate-in fade-in duration-300 min-w-0">
-              <img src={logo} alt="Logo" className="w-6 h-6 shrink-0" />
+            <div className="flex items-center gap-3 font-semibold text-lg animate-in fade-in duration-300 min-w-0">
+              {/* Increased Logo Size in Sidebar */}
+              <img src={logo} alt="Logo" className="w-8 h-8 shrink-0" />
               <span className="truncate">AI Chat</span>
             </div>
 

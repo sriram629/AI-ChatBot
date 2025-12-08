@@ -74,22 +74,32 @@ const ChatMessage = ({
       )}
     >
       {!isUser && (
-        <div className="shrink-0 relative w-8 h-8 flex items-center justify-center">
+        <div className="shrink-0 relative w-10 h-10 flex items-center justify-center">
+          {isLoading && (
+            <>
+              {/* Layer 1: Slow, wide blur (Base) */}
+              <div className="absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,transparent_0deg,#4285F4_180deg,transparent_360deg)] animate-[spin_3s_linear_infinite] opacity-50 blur-[1px]" />
+
+              {/* Layer 2: Fast, Easing (Highlight) - Creates the 'varied speed' look */}
+              <div className="absolute inset-0 rounded-full bg-[conic-gradient(from_90deg,transparent_0deg,#ec4899_180deg,transparent_360deg)] animate-[spin_1.5s_ease-in-out_infinite]" />
+            </>
+          )}
+
+          {/* Logo Container - Sized larger (38px) to make border thinner (1px) */}
           <div
             className={cn(
-              "w-8 h-8 rounded-full flex items-center justify-center overflow-hidden border bg-background z-10 relative aspect-square",
-              isLoading ? "border-transparent" : "border-border"
+              "relative flex items-center justify-center rounded-full bg-background overflow-hidden z-10 transition-all",
+              isLoading
+                ? "w-[38px] h-[38px]"
+                : "w-full h-full border border-border"
             )}
           >
             <img
               src={logo}
               alt="AI"
-              className="w-full h-full object-cover p-1"
+              className="w-full h-full object-cover p-0.5"
             />
           </div>
-          {isLoading && (
-            <div className="absolute inset-[-4px] rounded-full border-2 border-primary/30 border-t-primary animate-spin z-0" />
-          )}
         </div>
       )}
 
@@ -134,7 +144,10 @@ const ChatMessage = ({
               <>
                 {isLoading && content.length === 0 ? (
                   <div className="flex items-center gap-2 text-muted-foreground py-2 px-1">
-                    <span className="text-sm font-medium animate-pulse">
+                    {/* Simple grey pulse dot */}
+                    <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-pulse" />
+                    {/* Standard text color, no gradient */}
+                    <span className="text-sm font-medium animate-pulse text-muted-foreground">
                       {loadingText}
                     </span>
                   </div>

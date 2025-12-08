@@ -1,7 +1,7 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, UploadFile, File
 from typing import List
 from .auth import get_ws_user, get_current_user
-from .models import ChatMessage, ChatSession, User
+from .models import ChatMessage, ChatSession, User, Attachment
 import os
 import json
 import base64
@@ -9,6 +9,7 @@ import httpx
 import google.generativeai as genai
 from datetime import datetime
 from beanie import PydanticObjectId
+from .utils import handle_file_upload, get_image_object
 
 router = APIRouter()
 
@@ -49,6 +50,10 @@ model = genai.GenerativeModel(
     tools=tools_config,
     system_instruction=SYSTEM_PROMPT
 )
+
+@router.post("/upload", tags=["Chat"])
+async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):
+    return await handle_file_upload(file)
 
 @router.post("/sessions", response_model=ChatSession, tags=["Chat"])
 async def create_session(user: User = Depends(get_current_user)):
@@ -100,15 +105,56 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
             payload = json.loads(data)
             
             msg_type = payload.get("type", "message")
-            user_msg_content = ""
+            user_msg_content = payload.get("message", "")
+            attachment = payload.get("attachment")
 
             if msg_type == "message":
-                user_msg_content = payload.get("message")
                 temp_id = payload.get("tempId")
-                if not user_msg_content: continue
+                
+                # 🟢 FIX: Create a dedicated list for DB Attachments
+                db_attachments = []
+                
+                # Gemini prompt starts with text
+                gemini_prompt = [user_msg_content]
 
+                if attachment:
+                    if attachment['type'] == 'text':
+                        # Add content to Gemini Context (Hidden from User UI)
+                        context_text = f"\n\n[Attached File Content]:\n{attachment['content']}\n"
+                        gemini_prompt[0] += context_text
+                        
+                        # Add to DB Attachments (Clean Metadata)
+                        db_attachments.append(Attachment(
+                            type='file',
+                            filename=attachment['filename'],
+                            file_type='application/pdf' if attachment['filename'].endswith('.pdf') else 'text/plain'
+                        ))
+
+                    elif attachment['type'] == 'image':
+                        # Add image object to Gemini
+                        img_obj = get_image_object(attachment['file_path'])
+                        if img_obj:
+                            gemini_prompt.append(img_obj)
+                            
+                            # Add to DB Attachments (Clean Metadata)
+                            filename = attachment.get("filename")
+                            if filename:
+                                img_url = f"http://127.0.0.1:8000/static/{filename}"
+                                db_attachments.append(Attachment(
+                                    type='image',
+                                    url=img_url,
+                                    filename=filename
+                                ))
+
+                if not user_msg_content and not attachment: continue
+
+                # 🟢 SAVE TO DB: content is clean, attachments are separate
                 user_msg = ChatMessage(
-                    session_id=session_id, user_email=user.email, role="user", content=user_msg_content
+                    session_id=session_id, 
+                    user_email=user.email, 
+                    role="user", 
+                    content=user_msg_content, 
+                    attachments=db_attachments # 👈 Now we save this!
                 )
                 await user_msg.insert()
 
@@ -120,7 +166,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
                     }))
 
                 if session.title == "New Chat":
-                    session.title = user_msg_content[:40]
+                    session.title = user_msg_content[:40] if user_msg_content else "File Upload"
                     await session.save()
 
             elif msg_type == "edit":
@@ -136,7 +182,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
                     
                     target_msg.content = new_content
                     await target_msg.save()
-                    user_msg_content = new_content
+                    
+                    # For edit, we reset prompt to just text (simplification)
+                    gemini_prompt = [new_content]
 
                     await ChatMessage.find(
                         ChatMessage.session_id == session_id,
@@ -173,7 +221,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
 
                     if not user_prompt_msg: continue
                     
-                    user_msg_content = user_prompt_msg.content
+                    gemini_prompt = [user_prompt_msg.content]
                     await last_ai_msg.delete()
 
                     fresh_history = await ChatMessage.find(
@@ -198,7 +246,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
             is_ai_turn = True
 
             try:
-                response = await chat_session.send_message_async(user_msg_content)
+                response = await chat_session.send_message_async(gemini_prompt)
                 
                 if response.parts:
                     for part in response.parts:

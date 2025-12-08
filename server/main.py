@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+from fastapi.staticfiles import StaticFiles
+import os
 
 load_dotenv()
 
@@ -10,6 +12,9 @@ from app import auth, chat
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not os.path.exists("temp_uploads"):
+        os.makedirs("temp_uploads")
+    
     await init_db()
     print("✅ Database Connected")
     yield
@@ -23,6 +28,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount("/static", StaticFiles(directory="temp_uploads"), name="static")
 
 app.include_router(auth.router, prefix="/api/auth")
 app.include_router(chat.router, prefix="/api/chat")

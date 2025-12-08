@@ -5,10 +5,18 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { api, getSocketUrl } from "@/lib/api";
 
+export interface Attachment {
+  type: "image" | "file";
+  url?: string;
+  filename: string;
+  preview?: string;
+}
+
 export interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: Attachment[];
 }
 
 export const useChatSocket = (chatId: string | undefined) => {
@@ -19,25 +27,32 @@ export const useChatSocket = (chatId: string | undefined) => {
   const socketRef = useRef<WebSocket | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const pendingMessage = useRef<string | null>(null);
+  const pendingMessage = useRef<{ content: string; attachment: any } | null>(
+    null
+  );
+
   const [connectionKey, setConnectionKey] = useState(0);
 
-  // 1. Fetch History
   useEffect(() => {
     if (!token || !chatId) {
       setMessages([]);
       return;
     }
+
     if (pendingMessage.current) {
       setMessages([
         {
           id: Date.now().toString(),
           role: "user",
-          content: pendingMessage.current,
+          content: pendingMessage.current.content,
+          attachments: pendingMessage.current.attachment
+            ? [pendingMessage.current.attachment]
+            : [],
         },
       ]);
       return;
     }
+
     setIsConnecting(true);
     api
       .get(`/api/chat/sessions/${chatId}/messages`)
@@ -46,6 +61,7 @@ export const useChatSocket = (chatId: string | undefined) => {
           id: m._id,
           role: m.role,
           content: m.content,
+          attachments: m.attachments || [],
         }));
         setMessages(formatted);
       })
@@ -53,9 +69,9 @@ export const useChatSocket = (chatId: string | undefined) => {
       .finally(() => setIsConnecting(false));
   }, [chatId, token]);
 
-  // 2. Socket Connection
   useEffect(() => {
     if (!token || !chatId) return;
+
     if (socketRef.current) socketRef.current.close();
 
     const url = getSocketUrl(`/api/chat/ws/${chatId}`);
@@ -67,11 +83,23 @@ export const useChatSocket = (chatId: string | undefined) => {
         ws.send(
           JSON.stringify({
             type: "message",
-            message: pendingMessage.current,
-            tempId,
+            message: pendingMessage.current.content,
+            attachment: pendingMessage.current.attachment,
+            tempId: tempId,
           })
         );
-        // We don't setMessages here because sendMessage already did it
+
+        setMessages([
+          {
+            id: tempId,
+            role: "user",
+            content: pendingMessage.current.content,
+            attachments: pendingMessage.current.attachment
+              ? [pendingMessage.current.attachment]
+              : [],
+          },
+        ]);
+
         pendingMessage.current = null;
       }
     };
@@ -86,17 +114,12 @@ export const useChatSocket = (chatId: string | undefined) => {
           )
         );
       } else if (data.type === "start") {
-        // Backend confirms it started processing
-        // We ensure a bubble exists (if not created by sendMessage logic yet)
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === "assistant" && last.id === "ai-response")
-            return prev; // Already there
-          return [
+        setIsStreaming(true);
+        if (!data.isEdit)
+          setMessages((prev) => [
             ...prev,
             { id: "ai-response", role: "assistant", content: "" },
-          ];
-        });
+          ]);
       } else if (data.type === "chunk") {
         setMessages((prev) => {
           const newArr = [...prev];
@@ -119,39 +142,45 @@ export const useChatSocket = (chatId: string | undefined) => {
       }
     };
 
-    ws.onerror = () => {
-      setIsStreaming(false);
-    };
-
     socketRef.current = ws;
     return () => ws.close();
   }, [token, chatId, connectionKey]);
 
-  // 3. Send Message
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, attachment: any = null) => {
       const tempId = Date.now().toString();
-      setMessages((prev) => [...prev, { id: tempId, role: "user", content }]);
 
-      // 🟢 START LOADING IMMEDIATELY (So Stop button appears)
+      const newMsg: Message = {
+        id: tempId,
+        role: "user",
+        content,
+        attachments: attachment ? [attachment] : [],
+      };
+
+      setMessages((prev) => [...prev, newMsg]);
       setIsStreaming(true);
 
       if (chatId && socketRef.current?.readyState === WebSocket.OPEN) {
         socketRef.current.send(
-          JSON.stringify({ type: "message", message: content, tempId })
+          JSON.stringify({
+            type: "message",
+            message: content,
+            attachment: attachment,
+            tempId: tempId,
+          })
         );
         return;
       }
 
       if (chatId && socketRef.current?.readyState !== WebSocket.OPEN) {
-        pendingMessage.current = content;
+        pendingMessage.current = { content, attachment };
         setConnectionKey((prev) => prev + 1);
         return;
       }
 
       if (!chatId) {
         try {
-          pendingMessage.current = content;
+          pendingMessage.current = { content, attachment };
           const res = await api.post("/api/chat/sessions");
           navigate(`/chat/${res.data.session_id}`, { replace: true });
         } catch (e) {
@@ -166,10 +195,11 @@ export const useChatSocket = (chatId: string | undefined) => {
 
   const editMessage = useCallback((messageId: string, newContent: string) => {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-      toast.error("Connection lost.");
+      toast.error("Connection lost. Refreshing...");
+      setConnectionKey((prev) => prev + 1);
       return;
     }
-    setIsStreaming(true); // Start loading UI
+    setIsStreaming(true);
     setMessages((prev) => {
       const index = prev.findIndex((m) => m.id === messageId);
       if (index === -1) return prev;
@@ -183,9 +213,12 @@ export const useChatSocket = (chatId: string | undefined) => {
   }, []);
 
   const regenerateResponse = useCallback(() => {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN)
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      toast.error("Connection lost. Try again.");
+      setConnectionKey((prev) => prev + 1);
       return;
-    setIsStreaming(true); // Start loading UI
+    }
+    setIsStreaming(true);
     setMessages((prev) =>
       prev.length > 0 && prev[prev.length - 1].role === "assistant"
         ? prev.slice(0, -1)
@@ -194,7 +227,6 @@ export const useChatSocket = (chatId: string | undefined) => {
     socketRef.current.send(JSON.stringify({ type: "regenerate" }));
   }, []);
 
-  // 🟢 IMPROVED STOP FUNCTION
   const stopGeneration = useCallback(() => {
     if (socketRef.current) {
       socketRef.current.close();
@@ -202,24 +234,18 @@ export const useChatSocket = (chatId: string | undefined) => {
 
       setMessages((prev) => {
         if (prev.length === 0) return prev;
-
         const lastMsg = prev[prev.length - 1];
 
-        // CASE 1: AI has started typing (or is just an empty bubble)
         if (lastMsg.role === "assistant") {
-          // If it's empty, user stopped during "Thinking..."
           const newContent =
             lastMsg.content.trim() === ""
               ? "Generation stopped by user."
               : lastMsg.content;
-
-          // Update the last message
           const newArr = [...prev];
           newArr[newArr.length - 1] = { ...lastMsg, content: newContent };
           return newArr;
         }
 
-        // CASE 2: Last message was User (AI hasn't even started "Thinking" bubble yet)
         if (lastMsg.role === "user") {
           return [
             ...prev,
@@ -234,7 +260,6 @@ export const useChatSocket = (chatId: string | undefined) => {
         return prev;
       });
 
-      // Force reconnect for next message
       setConnectionKey((prev) => prev + 1);
       toast.info("Stopped");
     }

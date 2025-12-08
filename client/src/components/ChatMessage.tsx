@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Copy, Pencil, Check, X, RefreshCw } from "lucide-react";
+import { Copy, Pencil, Check, X, RefreshCw, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,9 +13,16 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 
+interface Attachment {
+  type: "image" | "file";
+  url?: string;
+  filename: string;
+}
+
 interface ChatMessageProps {
   role: "user" | "assistant";
   content: string;
+  attachments?: Attachment[];
   isLoading?: boolean;
   onEdit?: (newContent: string) => void;
   onRegenerate?: () => void;
@@ -24,6 +31,7 @@ interface ChatMessageProps {
 const ChatMessage = ({
   role,
   content,
+  attachments,
   isLoading,
   onEdit,
   onRegenerate,
@@ -33,6 +41,16 @@ const ChatMessage = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(content);
   const [loadingText, setLoadingText] = useState("Thinking...");
+
+  const cleanContent = (text: string) => {
+    return text
+      .replace(/\[Attached File\]:.*(\n|$)/g, "")
+      .replace(/\[Attached Image\]:.*(\n|$)/g, "")
+      .replace(/\[Attached File Content\]:[\s\S]*$/, "")
+      .trim();
+  };
+
+  const displayContent = cleanContent(content);
 
   useEffect(() => {
     if (!isLoading || content.length > 0) return;
@@ -77,18 +95,15 @@ const ChatMessage = ({
         <div className="shrink-0 relative w-10 h-10 flex items-center justify-center">
           {isLoading && (
             <>
-              {/* Layer 1: Slow, wide blur (Base) */}
-              <div className="absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,transparent_0deg,#4285F4_180deg,transparent_360deg)] animate-[spin_3s_linear_infinite] opacity-50 blur-[1px]" />
-
-              {/* Layer 2: Fast, Easing (Highlight) - Creates the 'varied speed' look */}
-              <div className="absolute inset-0 rounded-full bg-[conic-gradient(from_90deg,transparent_0deg,#ec4899_180deg,transparent_360deg)] animate-[spin_1.5s_ease-in-out_infinite]" />
+              {/* 🔵 BLUE SPINNER (Thin Border) */}
+              <div className="absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,transparent_0deg,transparent_80deg,#0EA5E9_360deg)] animate-[spin_1s_linear_infinite]" />
             </>
           )}
 
-          {/* Logo Container - Sized larger (38px) to make border thinner (1px) */}
           <div
             className={cn(
               "relative flex items-center justify-center rounded-full bg-background overflow-hidden z-10 transition-all",
+              // 🟢 THIN BORDER FIX: Increased inner size to 38px (leaving 1px border space)
               isLoading
                 ? "w-[38px] h-[38px]"
                 : "w-full h-full border border-border"
@@ -109,6 +124,45 @@ const ChatMessage = ({
           isUser && "items-end"
         )}
       >
+        {attachments && attachments.length > 0 && (
+          <div
+            className={cn(
+              "flex flex-wrap gap-2 mb-1",
+              isUser ? "justify-end" : "justify-start"
+            )}
+          >
+            {attachments.map((att, i) =>
+              att.type === "image" ? (
+                <div
+                  key={i}
+                  className="relative rounded-xl overflow-hidden border border-border w-48 h-auto group/img bg-black/5"
+                >
+                  <img
+                    src={att.url}
+                    alt="Uploaded"
+                    className="w-full h-auto object-cover"
+                  />
+                </div>
+              ) : (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card hover:bg-muted/50 transition-colors cursor-default max-w-[240px]"
+                >
+                  <div className="p-2 bg-blue-500/10 rounded-lg">
+                    <FileText className="h-5 w-5 text-blue-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {att.filename}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Document</p>
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        )}
+
         {isEditing ? (
           <div className="w-full space-y-2">
             <Textarea
@@ -139,15 +193,13 @@ const ChatMessage = ({
             )}
           >
             {isUser ? (
-              <div className="whitespace-pre-wrap">{content}</div>
+              <div className="whitespace-pre-wrap">{displayContent}</div>
             ) : (
               <>
-                {isLoading && content.length === 0 ? (
+                {isLoading && displayContent.length === 0 ? (
                   <div className="flex items-center gap-2 text-muted-foreground py-2 px-1">
-                    {/* Simple grey pulse dot */}
-                    <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-pulse" />
-                    {/* Standard text color, no gradient */}
-                    <span className="text-sm font-medium animate-pulse text-muted-foreground">
+                    {/* 🌈 MULTI-COLOR TEXT GRADIENT */}
+                    <span className="text-sm font-medium animate-pulse bg-gradient-to-r from-[#4285F4] via-[#9B72CB] to-[#D96570] bg-clip-text text-transparent">
                       {loadingText}
                     </span>
                   </div>
@@ -316,7 +368,7 @@ const ChatMessage = ({
                       },
                     }}
                   >
-                    {content}
+                    {displayContent}
                   </ReactMarkdown>
                 )}
               </>

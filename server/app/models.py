@@ -1,8 +1,15 @@
 from beanie import Document
-from pydantic import EmailStr, Field
+from pydantic import EmailStr, Field, BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 import uuid
+
+# 1. NEW: Schema for Attachments
+class Attachment(BaseModel):
+    type: str  # 'image' or 'file'
+    url: Optional[str] = None
+    filename: str
+    file_type: Optional[str] = None # e.g. 'application/pdf'
 
 class User(Document):
     email: EmailStr = Field(unique=True)
@@ -33,6 +40,8 @@ class ChatMessage(Document):
     user_email: str
     role: str 
     content: str
+    # 2. NEW: List of attachments
+    attachments: List[Attachment] = [] 
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:

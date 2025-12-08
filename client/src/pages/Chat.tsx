@@ -1,15 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Menu,
-  X,
-  ArrowDown,
-  LogOut,
-  PanelLeftOpen,
-  User as UserIcon,
-} from "lucide-react";
+import { Menu, X, ArrowDown, LogOut, PanelLeftOpen } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import ChatSidebar from "@/components/ChatSidebar";
 import ChatMessage from "@/components/ChatMessage";
@@ -72,7 +66,7 @@ const Chat = () => {
       const createSession = async () => {
         try {
           const res = await axios.post(
-            "[http://127.0.0.1:8000/api/chat/sessions](http://127.0.0.1:8000/api/chat/sessions)",
+            "http://127.0.0.1:8000/api/chat/sessions",
             {},
             {
               headers: { Authorization: `Bearer ${token}` },
@@ -106,8 +100,8 @@ const Chat = () => {
     setAutoScroll(true);
   };
 
-  const handleSendMessage = (content: string) => {
-    sendMessage(content);
+  const handleSendMessage = (content: string, attachment: any) => {
+    sendMessage(content, attachment);
     setAutoScroll(true);
   };
 
@@ -213,8 +207,7 @@ const Chat = () => {
                 <div className="w-full mt-2">
                   <ChatInput
                     onSend={handleSendMessage}
-                    isStreaming={isStreaming}
-                    onStop={stopGeneration}
+                    disabled={isStreaming}
                     className="shadow-md"
                   />
                 </div>
@@ -258,6 +251,7 @@ const Chat = () => {
                         key={message.id || index}
                         role={message.role}
                         content={message.content}
+                        attachments={message.attachments}
                         isLoading={isLoading}
                         onEdit={
                           message.role === "user"

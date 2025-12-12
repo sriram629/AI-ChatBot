@@ -4,47 +4,32 @@ from .auth import get_ws_user, get_current_user
 from .models import ChatMessage, ChatSession, User, Attachment
 import os
 import json
-import base64
-import httpx
 import google.generativeai as genai
 from datetime import datetime
 from beanie import PydanticObjectId
 from .utils import handle_file_upload, get_image_object
+from .tools import generate_image_tool, search_web_tool
 
 router = APIRouter()
 
-IMAGE_API_URL = "https://router.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
-HF_HEADERS = {"Authorization": f"Bearer {os.getenv('HF_API_KEY')}"}
-
-def generate_image_tool(prompt: str):
-    print(f"🎨 Tool Triggered: {prompt}")
-    try:
-        response = httpx.post(
-            IMAGE_API_URL, 
-            headers=HF_HEADERS, 
-            json={"inputs": prompt}, 
-            timeout=60.0 
-        )
-        if response.status_code != 200:
-            return f"Error: Image generation failed ({response.status_code})"
-            
-        image_data = base64.b64encode(response.content).decode("utf-8")
-        return f"![Generated Image](data:image/jpeg;base64,{image_data})"
-    except Exception as e:
-        return f"Error: {str(e)}"
-
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
+# 🟢 UPDATED PROMPT: Requesting detail and analysis
 SYSTEM_PROMPT = """
-You are a helpful AI assistant.
-When you use the 'generate_image_tool', the tool will return a Markdown Image string.
-You MUST output this Markdown string exactly as is.
-DO NOT wrap it in code blocks.
-DO NOT escape the exclamation mark.
-Just display the image directly to the user.
+You are a helpful, knowledgeable AI assistant with access to real-time tools.
+
+**GUIDELINES:**
+1. **Web Search:** When using 'search_web_tool', do NOT just give a one-line answer.
+   - Synthesize the information into a detailed summary.
+   - Include relevant context, recent news, trends, or reasons behind the data (e.g., "Stock is up because of X").
+   - If the user asks for a price/stock, provide the current price, the daily change, and any relevant market context found in the results.
+   
+2. **Image Generation:** If the user asks to generate/draw an image, use 'generate_image_tool'. Output the markdown image string exactly.
+
+3. **General:** Be comprehensive and informative. Avoid being overly brief unless specifically asked.
 """
 
-tools_config = [generate_image_tool]
+tools_config = [generate_image_tool, search_web_tool]
 model = genai.GenerativeModel(
     model_name='gemini-2.5-flash', 
     tools=tools_config,
@@ -111,19 +96,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
             if msg_type == "message":
                 temp_id = payload.get("tempId")
                 
-                # 🟢 FIX: Create a dedicated list for DB Attachments
                 db_attachments = []
-                
-                # Gemini prompt starts with text
                 gemini_prompt = [user_msg_content]
 
                 if attachment:
                     if attachment['type'] == 'text':
-                        # Add content to Gemini Context (Hidden from User UI)
                         context_text = f"\n\n[Attached File Content]:\n{attachment['content']}\n"
                         gemini_prompt[0] += context_text
                         
-                        # Add to DB Attachments (Clean Metadata)
                         db_attachments.append(Attachment(
                             type='file',
                             filename=attachment['filename'],
@@ -131,12 +111,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
                         ))
 
                     elif attachment['type'] == 'image':
-                        # Add image object to Gemini
                         img_obj = get_image_object(attachment['file_path'])
                         if img_obj:
                             gemini_prompt.append(img_obj)
                             
-                            # Add to DB Attachments (Clean Metadata)
                             filename = attachment.get("filename")
                             if filename:
                                 img_url = f"http://127.0.0.1:8000/static/{filename}"
@@ -148,13 +126,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
 
                 if not user_msg_content and not attachment: continue
 
-                # 🟢 SAVE TO DB: content is clean, attachments are separate
                 user_msg = ChatMessage(
                     session_id=session_id, 
                     user_email=user.email, 
                     role="user", 
                     content=user_msg_content, 
-                    attachments=db_attachments # 👈 Now we save this!
+                    attachments=db_attachments
                 )
                 await user_msg.insert()
 
@@ -183,7 +160,6 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
                     target_msg.content = new_content
                     await target_msg.save()
                     
-                    # For edit, we reset prompt to just text (simplification)
                     gemini_prompt = [new_content]
 
                     await ChatMessage.find(

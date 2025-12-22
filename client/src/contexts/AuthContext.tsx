@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  isLoading: boolean;
   token: string | null;
   userEmail: string | null;
   firstName: string | null;
@@ -41,26 +42,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [firstName, setFirstName] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
   const isAuthenticated = !!token;
 
-  // Fetch user profile to get the name
   const fetchUser = async () => {
     try {
-      // We need to implement this endpoint in backend later,
-      // OR just decode the JWT if name is in there.
-      // For now, let's assume the /me endpoint exists or fail silently.
       const res = await api.get("/api/auth/me");
       setUserEmail(res.data.email);
       setFirstName(res.data.first_name);
     } catch (error) {
-      console.error("Failed to fetch user details");
+      console.error("Failed to fetch user details", error);
     }
   };
 
   useEffect(() => {
-    if (token) {
-      fetchUser();
-    }
+    const initializeAuth = async () => {
+      if (token) {
+        await fetchUser();
+      }
+      setIsLoading(false);
+    };
+
+    initializeAuth();
   }, [token]);
 
   const login = async (email: string, pass: string) => {
@@ -70,7 +74,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem("token", accessToken);
       setToken(accessToken);
 
-      await fetchUser(); // Update name immediately
+      await fetchUser();
       toast.success("Welcome back!");
     } catch (error: any) {
       if (error.response?.status === 403) {
@@ -115,7 +119,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem("token", accessToken);
       setToken(accessToken);
 
-      await fetchUser(); // Get name
+      await fetchUser();
       toast.success("Verified! Logging in...");
     } catch (error: any) {
       toast.error("Invalid OTP");
@@ -185,6 +189,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     <AuthContext.Provider
       value={{
         isAuthenticated,
+        isLoading,
         token,
         userEmail,
         firstName,
@@ -203,6 +208,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) throw new Error("useAuth must be used within an AuthProvider");

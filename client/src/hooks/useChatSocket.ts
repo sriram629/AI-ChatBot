@@ -21,6 +21,8 @@ export interface Message {
 
 export const useChatSocket = (chatId: string | undefined) => {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [status, setStatus] = useState<string | null>(null);
+
   const { token } = useAuth();
   const navigate = useNavigate();
 
@@ -74,7 +76,7 @@ export const useChatSocket = (chatId: string | undefined) => {
 
     if (socketRef.current) socketRef.current.close();
 
-    const url = getSocketUrl(`/api/chat/ws/${chatId}`);
+    const url = getSocketUrl(`/api/chat/ws/${chatId}?token=${token}`);
     const ws = new WebSocket(url);
 
     ws.onopen = () => {
@@ -115,12 +117,18 @@ export const useChatSocket = (chatId: string | undefined) => {
         );
       } else if (data.type === "start") {
         setIsStreaming(true);
+        setStatus(null);
         if (!data.isEdit)
           setMessages((prev) => [
             ...prev,
             { id: "ai-response", role: "assistant", content: "" },
           ]);
+      } else if (data.type === "status") {
+        setStatus(data.content);
+      } else if (data.type === "title_update") {
+        window.dispatchEvent(new Event("session-updated"));
       } else if (data.type === "chunk") {
+        setStatus(null);
         setMessages((prev) => {
           const newArr = [...prev];
           const lastMsg = newArr[newArr.length - 1];
@@ -139,12 +147,20 @@ export const useChatSocket = (chatId: string | undefined) => {
         );
       } else if (data.type === "end") {
         setIsStreaming(false);
+        setStatus(null);
+      }
+    };
+
+    ws.onclose = (event) => {
+      if (event.code === 1008) {
+        toast.error("Connection denied. Please login again.");
+        navigate("/login");
       }
     };
 
     socketRef.current = ws;
     return () => ws.close();
-  }, [token, chatId, connectionKey]);
+  }, [token, chatId, connectionKey, navigate]);
 
   const sendMessage = useCallback(
     async (content: string, attachment: any = null) => {
@@ -159,6 +175,7 @@ export const useChatSocket = (chatId: string | undefined) => {
 
       setMessages((prev) => [...prev, newMsg]);
       setIsStreaming(true);
+      setStatus(null);
 
       if (chatId && socketRef.current?.readyState === WebSocket.OPEN) {
         socketRef.current.send(
@@ -172,25 +189,23 @@ export const useChatSocket = (chatId: string | undefined) => {
         return;
       }
 
-      if (chatId && socketRef.current?.readyState !== WebSocket.OPEN) {
-        pendingMessage.current = { content, attachment };
-        setConnectionKey((prev) => prev + 1);
-        return;
-      }
-
       if (!chatId) {
         try {
           pendingMessage.current = { content, attachment };
           const res = await api.post("/api/chat/sessions");
           navigate(`/chat/${res.data.session_id}`, { replace: true });
+          window.dispatchEvent(new Event("session-updated"));
         } catch (e) {
           toast.error("Failed to start chat");
           pendingMessage.current = null;
           setIsStreaming(false);
         }
+      } else {
+        pendingMessage.current = { content, attachment };
+        setConnectionKey((prev) => prev + 1);
       }
     },
-    [chatId, token, navigate]
+    [chatId, navigate]
   );
 
   const editMessage = useCallback((messageId: string, newContent: string) => {
@@ -200,6 +215,7 @@ export const useChatSocket = (chatId: string | undefined) => {
       return;
     }
     setIsStreaming(true);
+    setStatus(null);
     setMessages((prev) => {
       const index = prev.findIndex((m) => m.id === messageId);
       if (index === -1) return prev;
@@ -219,6 +235,7 @@ export const useChatSocket = (chatId: string | undefined) => {
       return;
     }
     setIsStreaming(true);
+    setStatus(null);
     setMessages((prev) =>
       prev.length > 0 && prev[prev.length - 1].role === "assistant"
         ? prev.slice(0, -1)
@@ -231,6 +248,7 @@ export const useChatSocket = (chatId: string | undefined) => {
     if (socketRef.current) {
       socketRef.current.close();
       setIsStreaming(false);
+      setStatus(null);
 
       setMessages((prev) => {
         if (prev.length === 0) return prev;
@@ -273,5 +291,6 @@ export const useChatSocket = (chatId: string | undefined) => {
     stopGeneration,
     isStreaming,
     isConnecting,
+    status,
   };
 };

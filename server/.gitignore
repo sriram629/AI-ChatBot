@@ -9,6 +9,8 @@ client/dist/
 client/.env
 client/.env.local
 
+temp_uploads/
+
 # Python / Backend
 venv/
 server/venv/

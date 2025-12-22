@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -10,14 +8,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/transparent-logo.png";
-import { api } from "@/lib/api";
-import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useSessions } from "@/hooks/useSessions";
 
 interface ChatSidebarProps {
   isOpen: boolean;
@@ -26,17 +23,8 @@ interface ChatSidebarProps {
 }
 
 const ChatSidebar = ({ isOpen, onToggle, currentChatId }: ChatSidebarProps) => {
-  const { token } = useAuth();
   const navigate = useNavigate();
-  const [sessions, setSessions] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (!token) return;
-    api
-      .get("/api/chat/sessions")
-      .then((res) => setSessions(res.data))
-      .catch((err) => console.error(err));
-  }, [token, currentChatId]);
+  const { sessions } = useSessions();
 
   const handleNewChat = () => {
     navigate("/chat");
@@ -49,7 +37,6 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId }: ChatSidebarProps) => {
         isOpen ? "w-72" : "w-[60px]"
       )}
     >
-      {/* HEADER */}
       <div
         className={cn(
           "h-16 flex items-center border-b border-border/50 transition-all duration-300",
@@ -59,7 +46,6 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId }: ChatSidebarProps) => {
         {isOpen ? (
           <>
             <div className="flex items-center gap-3 font-semibold text-lg animate-in fade-in duration-300 min-w-0">
-              {/* Increased Logo Size in Sidebar */}
               <img src={logo} alt="Logo" className="w-8 h-8 shrink-0" />
               <span className="truncate">AI Chat</span>
             </div>

@@ -1,18 +1,45 @@
-from beanie import Document
-from pydantic import EmailStr, Field, BaseModel
+from beanie import Document, PydanticObjectId
+from pydantic import BaseModel, Field, EmailStr
+from typing import List, Optional
 from datetime import datetime
-from typing import Optional, List
-import uuid
 
-# 1. NEW: Schema for Attachments
 class Attachment(BaseModel):
-    type: str  # 'image' or 'file'
+    type: str
+    content: Optional[str] = None
     url: Optional[str] = None
-    filename: str
-    file_type: Optional[str] = None # e.g. 'application/pdf'
+    filename: Optional[str] = None
+    file_type: Optional[str] = None
+
+    class Config:
+        extra = "ignore"
+
+class ChatMessage(Document):
+    session_id: str
+    user_email: str
+    role: str
+    content: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    attachments: List[Attachment] = []
+
+    class Settings:
+        name = "chat_messages"
+
+class ChatSession(Document):
+    session_id: str = Field(default_factory=lambda: str(PydanticObjectId()))
+    user_email: str
+    title: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "chat_sessions"
+    
+    async def save(self, *args, **kwargs):
+        self.updated_at = datetime.utcnow()
+        await super().save(*args, **kwargs)
 
 class User(Document):
-    email: EmailStr = Field(unique=True)
+    email: EmailStr
     hashed_password: str
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -24,25 +51,3 @@ class User(Document):
 
     class Settings:
         name = "users"
-
-class ChatSession(Document):
-    session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    user_email: str
-    title: str = "New Chat"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-    class Settings:
-        name = "chat_sessions"
-
-class ChatMessage(Document):
-    session_id: str
-    user_email: str
-    role: str 
-    content: str
-    # 2. NEW: List of attachments
-    attachments: List[Attachment] = [] 
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-    class Settings:
-        name = "chat_messages"

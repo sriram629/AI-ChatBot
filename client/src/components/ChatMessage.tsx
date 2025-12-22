@@ -96,14 +96,13 @@ const ChatMessage = ({
           {isLoading && (
             <>
               {/* 🔵 BLUE SPINNER (Thin Border) */}
-              <div className="absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,transparent_0deg,transparent_80deg,#0EA5E9_360deg)] animate-[spin_1s_linear_infinite]" />
+              <div className="absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,transparent_0deg,transparent_80deg,#0EA5E9_360deg)] animate-spin" />
             </>
           )}
 
           <div
             className={cn(
               "relative flex items-center justify-center rounded-full bg-background overflow-hidden z-10 transition-all",
-              // 🟢 THIN BORDER FIX: Increased inner size to 38px (leaving 1px border space)
               isLoading
                 ? "w-[38px] h-[38px]"
                 : "w-full h-full border border-border"
@@ -146,7 +145,7 @@ const ChatMessage = ({
               ) : (
                 <div
                   key={i}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card hover:bg-muted/50 transition-colors cursor-default max-w-[240px]"
+                  className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card hover:bg-muted/50 transition-colors cursor-default max-w-60"
                 >
                   <div className="p-2 bg-blue-500/10 rounded-lg">
                     <FileText className="h-5 w-5 text-blue-500" />
@@ -199,7 +198,7 @@ const ChatMessage = ({
                 {isLoading && displayContent.length === 0 ? (
                   <div className="flex items-center gap-2 text-muted-foreground py-2 px-1">
                     {/* 🌈 MULTI-COLOR TEXT GRADIENT */}
-                    <span className="text-sm font-medium animate-pulse bg-gradient-to-r from-[#4285F4] via-[#9B72CB] to-[#D96570] bg-clip-text text-transparent">
+                    <span className="text-sm font-medium animate-pulse bg-linear-to-r from-[#4285F4] via-[#9B72CB] to-[#D96570] bg-clip-text text-transparent">
                       {loadingText}
                     </span>
                   </div>

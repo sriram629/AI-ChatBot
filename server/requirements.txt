@@ -72,4 +72,5 @@ python-jose==3.5.0
 bcrypt==4.0.1
 fastapi-mail==1.5.8
 email-validator==2.3.0
+cloudinary==1.44.1
 aiofiles==24.1.0

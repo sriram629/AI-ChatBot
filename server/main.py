@@ -39,7 +39,8 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
-allowed_hosts = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+# allowed_hosts = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+allowed_hosts = ["*"]
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 origins = os.getenv("FRONTEND_URL", "http://localhost:5173").split(",")

@@ -156,7 +156,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
             if "IMAGE" in intent:
                 await safe_send(websocket, {"type": "status", "content": "Generating vision assets..."})
                 img_md = await generate_image_tool(user_msg)
-                if not img_md and not hf_token:
+                if not img_md:
                      await safe_send(websocket, {
                         "type": "status", 
                         "content": "Generation failed. Try a simpler prompt." 

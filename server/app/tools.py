@@ -1,8 +1,10 @@
 import os
 import asyncio
-from ddgs import DDGS
-import asyncio
+import uuid
 import httpx
+import random
+import urllib.parse
+from ddgs import DDGS
 
 async def search_google_serper(query: str):
     url = "https://google.serper.dev/search"
@@ -53,72 +55,62 @@ HEADERS = {
 
 async def generate_image_tool(prompt: str) -> str | None:
     print("[AI-HORDE] Starting image generation")
-    print(f"[AI-HORDE] Prompt: {prompt}")
+    start_time = asyncio.get_event_loop().time()
+    timeout_limit = 120  # Strict 2 minute limit
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        try:
-            print("[AI-HORDE] Submitting generation job...")
-            submit = await client.post(
-                f"{BASE_URL}/generate/async",
-                headers=HEADERS,
-                json={
-                    "prompt": prompt,
-                    "params": {
-                        "width": 576,
-                        "height": 576,
-                        "steps": 20,
-                        "sampler_name": "k_euler",
-                    },
-                },
-            )
-
-            print(f"[AI-HORDE] Submit status code: {submit.status_code}")
-            print(f"[AI-HORDE] Submit response: {submit.text}")
-            submit.raise_for_status()
-
-            job_id = submit.json().get("id")
-            print(f"[AI-HORDE] Job ID: {job_id}")
-
-            if not job_id:
-                print("[AI-HORDE][ERROR] No job ID returned")
-                return None
-
-        except Exception as e:
-            print(f"[AI-HORDE][ERROR] Job submission failed: {e}")
-            return None
-
-        # Poll
-        while True:
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
             try:
-                print("[AI-HORDE] Checking job status...")
-                status = await client.get(
-                    f"{BASE_URL}/generate/status/{job_id}",
+                submit = await client.post(
+                    f"{BASE_URL}/generate/async",
                     headers=HEADERS,
+                    json={
+                        "prompt": prompt,
+                        "params": {
+                            "width": 576,
+                            "height": 576,
+                            "steps": 20,
+                            "sampler_name": "k_euler",
+                        },
+                    },
                 )
-
-                print(f"[AI-HORDE] Status code: {status.status_code}")
-                print(f"[AI-HORDE] Status response: {status.text}")
-                status.raise_for_status()
-
-                data = status.json()
-
-                if data.get("done"):
-                    generations = data.get("generations", [])
-                    if not generations:
-                        print("[AI-HORDE][ERROR] Job done but generations empty")
-                        return None
-
-                    image_url = generations[0].get("img")
-                    if not image_url:
-                        print("[AI-HORDE][ERROR] Image URL missing in generation")
-                        return None
-
-                    print("[AI-HORDE] Image generated successfully")
-                    print(f"[AI-HORDE] Image URL: {image_url}")
-                    return f"![Generated Image]({image_url})"
-
-                await asyncio.sleep(2)
-
+                submit.raise_for_status()
+                job_id = submit.json().get("id")
+                if not job_id:
+                    return "I am unable to start the image generation right now."
             except Exception as e:
-                print(f"[AI-HORDE][ERROR] Polling error: {e}")
-                await asyncio.sleep(5)
+                print(f"[AI-HORDE][ERROR] Submission failed: {e}")
+                return "The image generation service is currently unavailable."
+
+            while (asyncio.get_event_loop().time() - start_time) < timeout_limit:
+                try:
+                    status = await client.get(
+                        f"{BASE_URL}/generate/status/{job_id}",
+                        headers=HEADERS,
+                    )
+
+                    if status.status_code == 429:
+                        await asyncio.sleep(10)
+                        continue
+
+                    status.raise_for_status()
+                    data = status.json()
+
+                    if data.get("done"):
+                        generations = data.get("generations", [])
+                        if generations and generations[0].get("img"):
+                            image_url = generations[0].get("img")
+                            return f"![Generated Image]({image_url})"
+                        return "Generation complete, but no image was found."
+
+                    await asyncio.sleep(5)
+
+                except Exception as e:
+                    print(f"[AI-HORDE][ERROR] Polling error: {e}")
+                    await asyncio.sleep(5)
+
+            return "Image generation timed out after 2 minutes. The queue is currently too long."
+
+    except Exception as global_e:
+        print(f"[CRITICAL ERROR] {global_e}")
+        return "An unexpected error occurred during image generation."

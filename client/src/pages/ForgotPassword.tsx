@@ -15,16 +15,16 @@ import {
   InputOTPGroup,
   InputOTPSlot,
 } from "@/components/ui/input-otp";
-import { ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react"; // Added Loader2
+import { ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
 import logo from "@/assets/transparent-logo.png";
 import { toast } from "sonner";
-import { useAuth } from "@/contexts/AuthContext"; // Import AuthContext
+import { useAuth } from "@/contexts/AuthContext";
 
 type Step = "email" | "password" | "otp";
 
 const ForgotPassword = () => {
-  const { requestPasswordReset, confirmPasswordReset } = useAuth(); // Hook into Backend
+  const { requestPasswordReset, confirmPasswordReset } = useAuth();
   const navigate = useNavigate();
 
   const [step, setStep] = useState<Step>("email");
@@ -35,9 +35,8 @@ const ForgotPassword = () => {
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false); // Loading state
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Step 1: Submit Email
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) {
@@ -47,11 +46,9 @@ const ForgotPassword = () => {
     setStep("password");
   };
 
-  // Step 2: Validate Password & Request OTP
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // --- VALIDATIONS ---
     if (password.length < 6) {
       toast.error("Password must be at least 6 characters long");
       return;
@@ -64,28 +61,23 @@ const ForgotPassword = () => {
 
     setIsLoading(true);
     try {
-      // Call Backend to generate OTP
       await requestPasswordReset(email, password);
       setStep("otp");
     } catch (error) {
-      // Error is handled in AuthContext (toasts), but we stop loading here
       console.error(error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Step 3: Verify OTP & Finalize
   const handleOtpVerify = async () => {
     if (otp.length !== 6) return;
 
     setIsLoading(true);
     try {
-      // Call Backend to verify OTP and update password
       await confirmPasswordReset(email, otp, password);
       navigate("/login");
     } catch (error) {
-      // Error handled in context
       console.error(error);
     } finally {
       setIsLoading(false);
@@ -97,6 +89,7 @@ const ForgotPassword = () => {
     try {
       await requestPasswordReset(email, password);
       setOtp("");
+      toast.success("Code resent successfully");
     } catch (e) {
       console.error(e);
     } finally {
@@ -123,7 +116,6 @@ const ForgotPassword = () => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* STEP 1: EMAIL */}
           {step === "email" && (
             <form onSubmit={handleEmailSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -144,7 +136,6 @@ const ForgotPassword = () => {
             </form>
           )}
 
-          {/* STEP 2: PASSWORD CREATION */}
           {step === "password" && (
             <form onSubmit={handlePasswordSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -158,11 +149,13 @@ const ForgotPassword = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     className="bg-background/50 pr-10"
+                    disabled={isLoading}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    disabled={isLoading}
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4" />
@@ -183,11 +176,13 @@ const ForgotPassword = () => {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
                     className="bg-background/50 pr-10"
+                    disabled={isLoading}
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    disabled={isLoading}
                   >
                     {showConfirmPassword ? (
                       <EyeOff className="h-4 w-4" />
@@ -207,11 +202,15 @@ const ForgotPassword = () => {
             </form>
           )}
 
-          {/* STEP 3: OTP VERIFICATION */}
           {step === "otp" && (
             <div className="space-y-6">
               <div className="flex justify-center">
-                <InputOTP maxLength={6} value={otp} onChange={setOtp}>
+                <InputOTP
+                  maxLength={6}
+                  value={otp}
+                  onChange={setOtp}
+                  disabled={isLoading}
+                >
                   <InputOTPGroup className="gap-3">
                     {[0, 1, 2, 3, 4, 5].map((index) => (
                       <InputOTPSlot

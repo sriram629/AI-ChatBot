@@ -191,6 +191,7 @@ const Login = () => {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="bg-background/50"
+                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
@@ -212,6 +213,7 @@ const Login = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   className="pr-10 bg-background/50"
+                  disabled={isLoading}
                 />
                 <Button
                   type="button"
@@ -219,6 +221,7 @@ const Login = () => {
                   size="icon"
                   className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                   onClick={() => setShowPassword(!showPassword)}
+                  disabled={isLoading}
                 >
                   {showPassword ? (
                     <EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -230,7 +233,10 @@ const Login = () => {
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Logging in...
+                </>
               ) : (
                 "Login"
               )}

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, UploadFile, File
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, UploadFile, File, HTTPException
 from typing import List
 from .auth import get_ws_user, get_current_user
 from .models import ChatMessage, ChatSession, User, Attachment
@@ -6,344 +6,221 @@ import os
 import json
 import asyncio
 import google.generativeai as genai
+from groq import Groq
+from mistralai import Mistral
 from datetime import datetime
 from beanie import PydanticObjectId
 from .utils import handle_file_upload
-from .tools import generate_image_tool, search_web_tool
+from .tools import search_web_consensus, generate_image_tool
 from .rag import add_to_vector_db, search_vector_db
-import httpx
-from PIL import Image
-import io
 from beanie.operators import Exists
 
 router = APIRouter()
 
-if not os.getenv("GOOGLE_API_KEY"):
-    print("CRITICAL WARNING: GOOGLE_API_KEY is missing from environment variables.")
-
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+mistral_client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
 
-def get_error_message(e):
-    err_str = str(e)
-    if "429" in err_str:
-        return "Server Busy: High traffic detected. I tried 3 times but couldn't get through. Please wait 1 minute."
-    if "Connection refused" in err_str:
-        return "System Error: Database connection unavailable. Chat may not save."
-    return "I encountered a technical error processing your request."
+hf_token = os.getenv("HF_API_KEY")
 
-async def retry_gemini_call(func, *args, retries=3, delay=2, **kwargs):
-    last_exception = None
-    for attempt in range(retries):
-        try:
-            return await func(*args, **kwargs)
-        except Exception as e:
-            last_exception = e
-            if "429" in str(e):
-                print(f"Rate Limit Hit (429). Retrying in {delay}s... (Attempt {attempt+1}/{retries})")
-                await asyncio.sleep(delay)
-                delay *= 2
-            else:
-                raise e
-    
-    print("Max retries reached.")
-    raise last_exception
-
-available_tools = {
-    "search_web_tool": search_web_tool,
-    "generate_image_tool": generate_image_tool
-}
+gemini_model = genai.GenerativeModel(model_name='gemini-2.0-flash-lite')
+title_model = genai.GenerativeModel('gemini-2.0-flash-lite')
 
 current_date = datetime.now().strftime("%A, %B %d, %Y")
 
-SYSTEM_PROMPT = f"""
-You are an intelligent and analytical AI assistant. Current Date: {current_date}.
-
-### YOUR CORE INSTRUCTIONS:
-1. **Analyze First:** Before responding, analyze the user's request to understand the intent.
-   - If they ask for **real-time data** (e.g., "Bitcoin price", "Weather in NY"), you MUST use the `search_web_tool`.
-   - If they ask for **concepts**, explain them in depth.
-
-2. **Comprehensive Responses (No One-Liners):** - Never provide a single-line answer for data queries. 
-   - **Example:** If asked for "Bitcoin Price", do not just say "It is $98,000."
-   - **Instead:** Provide the current price, followed by a **summary** of recent market movements, 24h change, or relevant news context found via search.
-
-3. **Formatting:**
-   - Use **Bold** for key figures.
-   - Use Bullet points for lists.
-   - Use small headers to separate sections if the answer is long.
-
-4. **Image Rule (CRITICAL):** - If you use `generate_image_tool`, it returns a Markdown link (e.g., `![Image](https://...)`).
-   - You **MUST** include this exact Markdown link in your final response.
-   - Do not describe the image; show it.
+BASE_CONSTRAINTS = """
+STRICT OUTPUT GUIDELINES:
+1. TABLES: Use Markdown tables for all data comparisons and structured lists.
+2. MATH: Use $...$ for inline and $$...$$ for block LaTeX formulas.
+3. CODE: Specify the language (e.g., ```typescript) for syntax highlighting.
+4. IMAGES: If asked to create an image, acknowledge that the vision engine is processing it.
+5. TONE: Professional, objective, and dense with information. Bold key concepts.
 """
 
-model = genai.GenerativeModel(
-    model_name='gemini-2.5-flash',
-    tools=[search_web_tool, generate_image_tool], 
-    system_instruction=SYSTEM_PROMPT
-)
+GEMINI_PROMPT = f"Persona: Gemini. Date: {current_date}. {BASE_CONSTRAINTS}"
+GROQ_PROMPT = f"Persona: Gemini (via Groq). Date: {current_date}. {BASE_CONSTRAINTS}"
+MISTRAL_PROMPT = f"Persona: Gemini (via Mistral). Date: {current_date}. {BASE_CONSTRAINTS}"
 
-title_model = genai.GenerativeModel('gemini-2.5-flash')
-
-@router.post("/upload", tags=["Chat"])
-async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):
-    return await handle_file_upload(file)
-
-@router.post("/sessions", response_model=ChatSession, tags=["Chat"])
-async def create_session(user: User = Depends(get_current_user)):
-    session = ChatSession(user_email=user.email, title="New Chat")
+async def safe_send(websocket: WebSocket, data: dict):
     try:
-        await session.insert()
-    except Exception as e:
-        print(f"DB Error creating session: {e}")
-    return session
+        await websocket.send_text(json.dumps(data))
+    except:
+        pass
 
-@router.get("/sessions", response_model=List[ChatSession], tags=["Chat"])
-async def get_sessions(user: User = Depends(get_current_user)):
+async def detect_intent(user_msg: str) -> str:
     try:
-        return await ChatSession.find(ChatSession.user_email == user.email).sort(-ChatSession.updated_at).to_list()
-    except Exception:
-        return []
+        check_prompt = (
+            f"Classify the user intent for this message: '{user_msg}'.\n"
+            "Rules:\n"
+            "- If the user wants to see, draw, or create an image/picture, reply exactly: IMAGE\n"
+            "- If it is a greeting like hi, hello, or bye, reply exactly: SIMPLE\n"
+            "- Otherwise, reply exactly: COMPLEX\n"
+            "Response must be ONE word only."
+        )
+        resp = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant", 
+            messages=[{"role": "user", "content": check_prompt}],
+            max_tokens=5,
+            temperature=0  # Keep it deterministic
+        )
+        return resp.choices[0].message.content.strip().upper()
+    except:
+        return "COMPLEX"
 
-@router.get("/sessions/{session_id}/messages", response_model=List[ChatMessage], tags=["Chat"])
-async def get_session_messages(session_id: str, user: User = Depends(get_current_user)):
+async def call_mistral(prompt, history, websocket, context):
     try:
-        return await ChatMessage.find(ChatMessage.session_id == session_id).sort(+ChatMessage.timestamp).to_list()
-    except Exception:
-        return []
+        msgs = [{"role": "system", "content": MISTRAL_PROMPT}]
+        for h in history:
+            msgs.append({"role": "user" if h['role'] == 'user' else "assistant", "content": h['parts'][0]})
+        msgs.append({"role": "user", "content": f"CONTEXT: {context}\n\nUSER: {prompt}"})
+        full_resp = ""
+        stream = mistral_client.chat.stream(model="mistral-small-latest", messages=msgs)
+        for chunk in stream:
+            content = chunk.data.choices[0].delta.content
+            if content:
+                full_resp += content
+                await safe_send(websocket, {"type": "chunk", "content": content})
+        return full_resp
+    except:
+        return "All AI systems are currently at capacity."
 
-async def get_formatted_history(session_id: str, limit: int = 15):
+async def call_groq(prompt, history, websocket, context):
     try:
-        recent_history = await ChatMessage.find(ChatMessage.session_id == session_id)\
-            .sort(-ChatMessage.timestamp).limit(limit).to_list()
-        recent_history.reverse()
-        
-        valid_history = []
-        for m in recent_history:
-            if m.content and m.content.strip():
-                valid_history.append({"role": "user" if m.role == "user" else "model", "parts": [m.content]})
-        return valid_history
-    except Exception:
-        return []
+        msgs = [{"role": "system", "content": GROQ_PROMPT}]
+        for h in history:
+            msgs.append({"role": "user" if h['role'] == 'user' else "assistant", "content": h['parts'][0]})
+        msgs.append({"role": "user", "content": f"CONTEXT: {context}\n\nUSER: {prompt}"})
+        full_resp = ""
+        comp = groq_client.chat.completions.create(model="llama-3.3-70b-versatile", messages=msgs, stream=True)
+        for chunk in comp:
+            content = chunk.choices[0].delta.content
+            if content:
+                full_resp += content
+                await safe_send(websocket, {"type": "chunk", "content": content})
+        return full_resp
+    except:
+        await safe_send(websocket, {"type": "status", "content": "Switching to safety fallback..."})
+        return await call_mistral(prompt, history, websocket, context)
 
-async def speculative_rag_search(session_id: str, query: str):
+async def call_gemini(prompt, history, websocket, context):
     try:
-        if len(query) < 5: return None
-        if not await ChatMessage.find_one(ChatMessage.session_id == session_id):
-            return None
-            
-        has_files = await ChatMessage.find(
-            ChatMessage.session_id == session_id,
-            Exists(ChatMessage.attachments, True)
-        ).count() > 0
-        if not has_files: return None
-        return await asyncio.to_thread(search_vector_db, query)
-    except Exception:
-        return None
-
-async def generate_smart_title(session_id: str, user_email: str, user_message: str, websocket: WebSocket):
-    await asyncio.sleep(2)
-    try:
-        prompt = f"Summarize this into a 3-5 word title. No quotes. Text: {user_message}"
-        response = await retry_gemini_call(title_model.generate_content_async, prompt)
-        title = response.text.strip().replace('"', '')
-        
-        session = await ChatSession.find_one(ChatSession.session_id == session_id, ChatSession.user_email == user_email)
-        if session:
-            session.title = title
-            await session.save()
-            
-            await websocket.send_text(json.dumps({
-                "type": "title_update",
-                "id": session_id,
-                "title": title
-            }))
-    except Exception as e:
-        print(f"Title Gen Error: {e}") 
+        chat = gemini_model.start_chat(history=history)
+        response_stream = await chat.send_message_async(f"CONTEXT: {context}\n\nUSER: {prompt}", stream=True)
+        full_resp = ""
+        async for chunk in response_stream:
+            if chunk.text:
+                full_resp += chunk.text
+                await safe_send(websocket, {"type": "chunk", "content": chunk.text})
+        return full_resp
+    except:
+        await safe_send(websocket, {"type": "status", "content": "Gemini busy, trying backup..."})
+        return await call_groq(prompt, history, websocket, context)
 
 @router.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
     user = await get_ws_user(token)
     if not user:
-        await websocket.close(code=1008)
-        return
-
-    try:
-        session = await ChatSession.find_one(ChatSession.session_id == session_id, ChatSession.user_email == user.email)
-    except Exception:
-        session = None
-
-    if not session:
-        session = ChatSession(session_id=session_id, user_email=user.email, title="New Chat")
-
+        await websocket.close(code=1008); return
     await websocket.accept()
-
     try:
         while True:
-            full_response = ""
             data = await websocket.receive_text()
+            payload = json.loads(data)
+            msg_type, user_msg = payload.get("type", "message"), payload.get("message", "")
+            temp_id, attachment = payload.get("tempId"), payload.get("attachment")
             
-            try:
-                payload = json.loads(data)
-            except json.JSONDecodeError:
-                continue
+            session = await ChatSession.find_one(ChatSession.session_id == session_id)
+            if not session:
+                session = await ChatSession(session_id=session_id, user_email=user.email, title="New Chat").insert()
+                await safe_send(websocket, {"type": "refresh-sessions"})
             
-            msg_type = payload.get("type", "message")
-            user_msg_content = ""
-            attachment = None
-            should_save_user_msg = False
-            temp_id = None
-
+            if msg_type in ["edit", "regenerate"]:
+                trigger = await ChatMessage.find_one(ChatMessage.session_id == session_id, ChatMessage.content == user_msg)
+                if trigger:
+                    await ChatMessage.find(ChatMessage.session_id == session_id, ChatMessage.timestamp > trigger.timestamp).delete()
+            
+            db_atts = []
+            if attachment and attachment['type'] == 'text':
+                try: 
+                    await add_to_vector_db(attachment['content'], attachment['filename'], session_id)
+                    db_atts.append(Attachment(type='file', filename=attachment['filename']))
+                except: pass
+            
             if msg_type == "message":
-                user_msg_content = payload.get("message", "")
-                attachment = payload.get("attachment")
-                temp_id = payload.get("tempId")
-                should_save_user_msg = True
+                await ChatMessage(session_id=session_id, user_email=user.email, role="user", content=user_msg, attachments=db_atts).insert()
             
-            elif msg_type == "regenerate":
-                try:
-                    last_msgs = await ChatMessage.find(ChatMessage.session_id == session_id)\
-                        .sort(-ChatMessage.timestamp).limit(2).to_list()
-                    if last_msgs and last_msgs[0].role == "assistant":
-                        await last_msgs[0].delete()
-                        if len(last_msgs) > 1 and last_msgs[1].role == "user":
-                            user_msg_content = last_msgs[1].content
-                except Exception:
-                    continue
-
-            if user_msg_content:
-                try:
-                    await websocket.send_text(json.dumps({"type": "start"}))
-
-                    history_task = asyncio.create_task(get_formatted_history(session_id))
-                    rag_task = asyncio.create_task(speculative_rag_search(session_id, user_msg_content))
-                    
-                    db_attachments = []
-                    user_msg_content_for_ai = user_msg_content
-                    
-                    if attachment and should_save_user_msg:
-                        try:
-                            if attachment['type'] == 'text':
-                                asyncio.create_task(asyncio.to_thread(add_to_vector_db, attachment['content'], attachment['filename']))
-                                user_msg_content_for_ai += f"\n\n[Attached File Content]:\n{attachment['content']}\n"
-                                db_attachments.append(Attachment(type='file', filename=attachment['filename'], file_type='pdf'))
-                            elif attachment['type'] == 'image':
-                                img_data = None
-                                if attachment.get('url'):
-                                    async with httpx.AsyncClient() as client:
-                                        resp = await client.get(attachment['url'])
-                                        img_data = Image.open(io.BytesIO(resp.content))
-                                if img_data:
-                                    user_msg_content_for_ai = [user_msg_content, img_data]
-                                    db_attachments.append(Attachment(type='image', url=attachment['url'], filename=attachment['filename']))
-                        except Exception as e:
-                            print(f"Attachment Error: {e}")
-
-                    save_msg_task = None
-                    if should_save_user_msg:
-                        try:
-                            save_msg_task = asyncio.create_task(
-                                ChatMessage(
-                                    session_id=session_id, user_email=user.email, role="user", 
-                                    content=user_msg_content, attachments=db_attachments
-                                ).insert()
-                            )
-                        except Exception as e:
-                            print(f"DB Save Failed (User): {e}")
-
-                    history_data = await history_task
-                    rag_context = None
-                    try:
-                        rag_context = await asyncio.wait_for(rag_task, timeout=2.0)
-                    except Exception: pass
-
-                    gemini_prompt = user_msg_content_for_ai
-                    if rag_context:
-                        sys_instruction = f"Context:\n{rag_context}\n\nQuestion: {user_msg_content}"
-                        if isinstance(gemini_prompt, list):
-                            gemini_prompt[0] = sys_instruction
-                        else:
-                            gemini_prompt = sys_instruction
-
-                    chat_session = model.start_chat(history=history_data, enable_automatic_function_calling=False)
-                    
-                    function_call_found = None
-                    fn_name = None
-                    tool_result = None
-
-                    response_stream = await retry_gemini_call(chat_session.send_message_async, gemini_prompt, stream=True)
-                    
-                    async for chunk in response_stream:
-                        if chunk.candidates and chunk.candidates[0].content.parts:
-                            part = chunk.candidates[0].content.parts[0]
-                            if part.function_call and part.function_call.name:
-                                function_call_found = part.function_call
-                                break 
-                        
-                        try:
-                            if chunk.text:
-                                clean_chunk = chunk.text.replace(r"\!", "!")
-                                full_response += clean_chunk
-                                await websocket.send_text(json.dumps({"type": "chunk", "content": clean_chunk}))
-                        except Exception:
-                            pass
-
-                    if function_call_found:
-                        fn_name = function_call_found.name
-                        fn_args = dict(function_call_found.args)
-                        
-                        friendly_name = "Generating Image..." if "generate_image" in fn_name else "Searching Web..."
-                        await websocket.send_text(json.dumps({"type": "status", "content": f"{friendly_name}"}))
-                        
-                        tool_result = "Error."
-                        if fn_name in available_tools:
-                            try:
-                                tool_result = await asyncio.to_thread(available_tools[fn_name], **fn_args)
-                            except Exception as e:
-                                tool_result = f"Tool Execution Failed: {str(e)}"
-                        
-                        part = genai.protos.Part(function_response=genai.protos.FunctionResponse(name=fn_name, response={'result': tool_result}))
-                        
-                        final_stream = await retry_gemini_call(chat_session.send_message_async, [part], stream=True)
-                        async for chunk in final_stream:
-                            try:
-                                if chunk.text:
-                                    clean_chunk = chunk.text.replace(r"\!", "!")
-                                    full_response += clean_chunk
-                                    await websocket.send_text(json.dumps({"type": "chunk", "content": clean_chunk}))
-                            except Exception: pass
-
-                    try:
-                        asyncio.create_task(
-                            ChatMessage(session_id=session_id, user_email=user.email, role="assistant", content=full_response).insert()
-                        )
-                    except Exception: pass
-                    
-                    if save_msg_task:
-                        try:
-                            saved_msg = await save_msg_task
-                            if temp_id:
-                                await websocket.send_text(json.dumps({"type": "id_update", "tempId": temp_id, "realId": str(saved_msg.id)}))
-                        except Exception: pass
-
-                except Exception as e:
-                    error_msg = get_error_message(e)
-                    
-                    if function_call_found and fn_name == "generate_image_tool" and "pollinations" in str(tool_result):
-                        await websocket.send_text(json.dumps({"type": "chunk", "content": f"{tool_result}\n\n(Note: AI context lost due to connection error, but here is your image.)"}))
-                    else:
-                        await websocket.send_text(json.dumps({"type": "chunk", "content": error_msg}))
-                    
-                    print(f"Handled Error: {e}")
-
-                finally:
-                    await websocket.send_text(json.dumps({"type": "end"}))
+            await safe_send(websocket, {"type": "start", "tempId": temp_id})
+            
+            intent = await detect_intent(user_msg)
+            
+            if "IMAGE" in intent:
+                await safe_send(websocket, {"type": "status", "content": "Generating vision assets..."})
+                img_md = await generate_image_tool(user_msg)
+                if not img_md and not hf_token:
+                     await safe_send(websocket, {
+                        "type": "status", 
+                        "content": "Generation failed. Try a simpler prompt." 
+                    })
+                await ChatMessage(session_id=session_id, user_email=user.email, role="assistant", content=img_md).insert()
+                await safe_send(websocket, {"type": "chunk", "content": img_md})
+                await safe_send(websocket, {"type": "end"})
+            else:
+                rag_task = asyncio.create_task(search_vector_db(session_id, user_msg))
+                web_task = asyncio.create_task(search_web_consensus(user_msg))
+                rag_ctx = await rag_task or "None"
+                web_ctx = await web_task or "None"
+                context = f"RAG: {rag_ctx}\nSEARCH: {web_ctx}"
+                history = await get_formatted_history(session_id)
                 
-                if session.title == "New Chat" and user_msg_content and should_save_user_msg:
-                    session.title = "Generating..." 
-                    asyncio.create_task(generate_smart_title(session_id, user.email, user_msg_content, websocket))
+                if intent == "COMPLEX":
+                    full_resp = await call_gemini(user_msg, history, websocket, context)
+                else:
+                    full_resp = await call_groq(user_msg, history, websocket, context)
+                
+                await ChatMessage(session_id=session_id, user_email=user.email, role="assistant", content=full_resp).insert()
+                await safe_send(websocket, {"type": "end"})
 
-    except WebSocketDisconnect:
-        print("WS Disconnected")
-    except Exception as e:
-        print(f"WS Critical Error: {e}")
+            if session.title == "New Chat":
+                asyncio.create_task(generate_smart_title(session_id, user_msg, websocket))
+
+    except Exception: pass
+
+async def get_formatted_history(session_id: str):
+    msgs = await ChatMessage.find(ChatMessage.session_id == session_id).sort(-ChatMessage.timestamp).limit(5).to_list()
+    msgs.reverse()
+    return [{"role": "user" if m.role == "user" else "model", "parts": [m.content]} for m in msgs if m.content]
+
+async def generate_smart_title(session_id, user_msg, websocket):
+    try:
+        title = user_msg[:30] + "..."
+        try:
+            res = await title_model.generate_content_async(f"Give a 3-word title for: {user_msg}")
+            title = res.text.strip().replace('"', '')
+        except:
+            try:
+                res = groq_client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role":"user","content":f"Title in 3 words: {user_msg}"}], max_tokens=10)
+                title = res.choices[0].message.content.strip().replace('"', '')
+            except: pass
+        
+        session = await ChatSession.find_one(ChatSession.session_id == session_id)
+        if session:
+            session.title = title
+            await session.save()
+            await safe_send(websocket, {"type": "title_update", "id": session_id, "title": title})
+    except: pass
+
+@router.post("/sessions")
+async def create_session(user: User = Depends(get_current_user)):
+    return await ChatSession(session_id=str(PydanticObjectId()), user_email=user.email, title="New Chat").insert()
+
+@router.get("/sessions")
+async def get_sessions(user: User = Depends(get_current_user)):
+    return await ChatSession.find(ChatSession.user_email == user.email).sort(-ChatSession.updated_at).to_list()
+
+@router.get("/sessions/{session_id}/messages")
+async def get_messages(session_id: str, user: User = Depends(get_current_user)):
+    return await ChatMessage.find(ChatMessage.session_id == session_id).sort(+ChatMessage.timestamp).to_list()
+
+@router.post("/upload")
+async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):
+    return await handle_file_upload(file)

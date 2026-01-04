@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import AuthLayout from "@/components/AuthLayout";
 import logo from "@/assets/transparent-logo.png";
@@ -26,6 +26,7 @@ const Register = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -36,15 +37,19 @@ const Register = () => {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password !== confirmPassword) {
-      toast.error("Mismatch");
+      toast.error("Passwords do not match");
       return;
     }
+
+    setIsLoading(true);
 
     try {
       await register(email, password, firstName, lastName);
       navigate("/verify-email");
     } catch (e) {
-      // Error handled in context
+      console.error(e);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -75,6 +80,7 @@ const Register = () => {
                   onChange={(e) => setFirstName(e.target.value)}
                   required
                   className="bg-background/50"
+                  disabled={isLoading}
                 />
               </div>
               <div className="space-y-2">
@@ -87,6 +93,7 @@ const Register = () => {
                   onChange={(e) => setLastName(e.target.value)}
                   required
                   className="bg-background/50"
+                  disabled={isLoading}
                 />
               </div>
             </div>
@@ -100,6 +107,7 @@ const Register = () => {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="bg-background/50"
+                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
@@ -113,6 +121,7 @@ const Register = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   className="pr-10 bg-background/50"
+                  disabled={isLoading}
                 />
                 <Button
                   type="button"
@@ -120,6 +129,7 @@ const Register = () => {
                   size="icon"
                   className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                   onClick={() => setShowPassword(!showPassword)}
+                  disabled={isLoading}
                 >
                   {showPassword ? (
                     <EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -140,6 +150,7 @@ const Register = () => {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   className="pr-10 bg-background/50"
+                  disabled={isLoading}
                 />
                 <Button
                   type="button"
@@ -147,6 +158,7 @@ const Register = () => {
                   size="icon"
                   className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  disabled={isLoading}
                 >
                   {showConfirmPassword ? (
                     <EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -156,8 +168,15 @@ const Register = () => {
                 </Button>
               </div>
             </div>
-            <Button type="submit" className="w-full">
-              Register
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creating Account...
+                </>
+              ) : (
+                "Register"
+              )}
             </Button>
           </form>
 

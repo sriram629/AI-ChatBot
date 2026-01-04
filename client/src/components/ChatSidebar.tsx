@@ -1,5 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Plus,
   MessageSquare,
@@ -8,13 +12,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/transparent-logo.png";
-import { useNavigate } from "react-router-dom";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useSessions } from "@/hooks/useSessions";
+import { api } from "@/lib/api";
 
 interface ChatSidebarProps {
   isOpen: boolean;
@@ -24,11 +27,37 @@ interface ChatSidebarProps {
 
 const ChatSidebar = ({ isOpen, onToggle, currentChatId }: ChatSidebarProps) => {
   const navigate = useNavigate();
-  const { sessions } = useSessions();
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchSessions = async () => {
+    try {
+      const res = await api.get("/api/chat/sessions");
+      setSessions(res.data);
+    } catch (err) {
+      console.error("Failed to fetch sessions");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSessions();
+    window.addEventListener("session-updated", fetchSessions);
+    window.addEventListener("refresh-sessions", fetchSessions);
+    return () => {
+      window.removeEventListener("session-updated", fetchSessions);
+      window.removeEventListener("refresh-sessions", fetchSessions);
+    };
+  }, []);
 
   const handleNewChat = () => {
     navigate("/chat");
   };
+
+  // Check if the current chat is "new" and not yet in the session list
+  const isCurrentChatNew =
+    currentChatId && !sessions.find((s) => s.session_id === currentChatId);
 
   return (
     <aside
@@ -49,20 +78,14 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId }: ChatSidebarProps) => {
               <img src={logo} alt="Logo" className="w-8 h-8 shrink-0" />
               <span className="truncate">AI Chat</span>
             </div>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onToggle}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0"
-                >
-                  <PanelLeftClose className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Close Sidebar</TooltipContent>
-            </Tooltip>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onToggle}
+              className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </Button>
           </>
         ) : (
           <Tooltip>
@@ -112,33 +135,73 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId }: ChatSidebarProps) => {
             <p className="px-2 py-1.5 text-xs font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1">
               Recent
             </p>
-            {sessions.map((session) => (
-              <button
-                key={session.session_id}
-                onClick={() => navigate(`/chat/${session.session_id}`)}
-                title={session.title || "New Chat"}
-                className={cn(
-                  "group flex items-center gap-3 w-full text-left rounded-lg transition-all px-3 py-2.5",
-                  currentChatId === session.session_id
-                    ? "bg-sidebar-accent text-foreground font-medium shadow-sm"
-                    : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
-                )}
-              >
-                <MessageSquare className="h-4 w-4 shrink-0 opacity-70 group-hover:opacity-100 transition-opacity" />
 
-                <div className="flex-1 min-w-0 grid gap-0.5">
-                  <span className="text-sm truncate font-medium">
-                    {session.title || "New Chat"}
-                  </span>
-                  <span className="text-[10px] opacity-50 truncate font-normal">
-                    {new Date(session.updated_at).toLocaleDateString()}
-                  </span>
+            {/* Optimistic Skeleton for the first message of a new chat */}
+            {isCurrentChatNew && !isLoading && (
+              <div className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg bg-sidebar-accent/30 animate-pulse">
+                <MessageSquare className="h-4 w-4 shrink-0 opacity-40" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 bg-muted rounded w-3/4" />
+                  <div className="h-2 bg-muted rounded w-1/2" />
                 </div>
-              </button>
-            ))}
+              </div>
+            )}
+
+            {isLoading ? (
+              <div className="px-2 space-y-3">
+                <Skeleton className="h-10 w-full rounded-lg bg-muted/20" />
+                <Skeleton className="h-10 w-full rounded-lg bg-muted/20" />
+                <Skeleton className="h-10 w-full rounded-lg bg-muted/20" />
+              </div>
+            ) : (
+              sessions.map((session) => (
+                <button
+                  key={session.session_id}
+                  onClick={() => navigate(`/chat/${session.session_id}`)}
+                  className={cn(
+                    "group flex items-center gap-3 w-full text-left rounded-lg transition-all px-3 py-2.5",
+                    currentChatId === session.session_id
+                      ? "bg-sidebar-accent text-foreground font-medium shadow-sm"
+                      : "text-muted-foreground hover:bg-sidebar-accent/5 hover:text-foreground"
+                  )}
+                >
+                  <MessageSquare className="h-4 w-4 shrink-0 opacity-70 group-hover:opacity-100 transition-opacity" />
+                  <div className="flex-1 min-w-0 grid gap-0.5">
+                    <span className="text-sm truncate font-medium">
+                      {session.title || "New Chat"}
+                    </span>
+                    <span className="text-[10px] opacity-50 truncate font-normal">
+                      {new Date(session.updated_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                </button>
+              ))
+            )}
           </div>
         ) : (
-          <div className="w-full h-full" />
+          <div className="flex flex-col items-center py-4 gap-4">
+            {sessions.slice(0, 5).map((session) => (
+              <Tooltip key={session.session_id}>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => navigate(`/chat/${session.session_id}`)}
+                    className={cn(
+                      "h-10 w-10 rounded-xl",
+                      currentChatId === session.session_id &&
+                        "bg-sidebar-accent"
+                    )}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  {session.title || "New Chat"}
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
         )}
       </ScrollArea>
     </aside>

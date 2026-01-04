@@ -1,104 +1,98 @@
 import os
-import google.generativeai as genai
-from pymongo import MongoClient
+import asyncio
+import httpx
+from motor.motor_asyncio import AsyncIOMotorClient
+from typing import List, Optional
 
-if os.getenv("GOOGLE_API_KEY"):
-    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+MONGO_URL = os.getenv("MONGO_URI")
+client = AsyncIOMotorClient(MONGO_URL)
+db = client.ai_chat_db
+vector_collection = db.vector_storage
 
-try:
-    mongo_url = os.getenv("MONGO_URI") or os.getenv("MONGO_URL")
-    mongo_client = MongoClient(mongo_url)
-    db = mongo_client["chatdb"]
-    collection = db["rag_vectors"]
-except Exception:
-    mongo_client = None
-    collection = None
+HF_TOKEN = os.getenv("HF_API_KEY")
+# Added explicit task routing to the URL to force Feature Extraction
+EMBEDDING_MODEL_URL = "https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2/pipeline/feature-extraction"
 
-def get_gemini_embedding(text: str):
-    clean_text = text.replace("\n", " ")
-    try:
-        result = genai.embed_content(
-            model="models/text-embedding-004",
-            content=clean_text,
-            task_type="retrieval_document"
-        )
-        return result['embedding']
-    except Exception as e:
-        print(f"Embedding Error: {e}")
-        return []
+async def get_embedding(text: str):
+    if not HF_TOKEN:
+        print("[ERROR] HF_TOKEN missing in environment variables.")
+        return None
 
-def add_to_vector_db(text: str, filename: str):
-    if not collection:
-        return
-
-    print(f"Indexing {filename} in MongoDB...")
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN}",
+        "Content-Type": "application/json",
+        "X-Wait-For-Model": "true"
+    }
     
-    chunk_size = 1000
-    overlap = 100
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        chunks.append(text[start:end])
-        start += chunk_size - overlap
-
-    documents = []
-    for chunk in chunks:
-        vector = get_gemini_embedding(chunk)
-        if vector:
-            documents.append({
-                "text": chunk,
-                "source": filename,
-                "embedding": vector
-            })
-
-    if documents:
-        try:
-            collection.insert_many(documents)
-            print(f"Successfully indexed {len(documents)} chunks.")
-        except Exception as e:
-            print(f"MongoDB Upload Error: {e}")
-
-def search_vector_db(query: str):
-    if not collection:
-        return None
+    # Payload is kept simple to avoid pipeline confusion
+    payload = {"inputs": text}
 
     try:
-        query_vector = genai.embed_content(
-            model="models/text-embedding-004",
-            content=query,
-            task_type="retrieval_query"
-        )['embedding']
-        
-        pipeline = [
-            {
-                "$vectorSearch": {
-                    "index": "vector_index",
-                    "path": "embedding",
-                    "queryVector": query_vector,
-                    "numCandidates": 100,
-                    "limit": 3
-                }
-            },
-            {
-                "$project": {
-                    "_id": 0,
-                    "text": 1,
-                    "source": 1,
-                    "score": { "$meta": "vectorSearchScore" }
-                }
-            }
-        ]
-        
-        results = list(collection.aggregate(pipeline))
-        
-        context = ""
-        for res in results:
-            if res.get('score', 0) > 0.6:
-                context += f"---\n[Source: {res['source']}]\n{res['text']}\n"
-                
-        return context if context else None
-
+        async with httpx.AsyncClient() as client:
+            response = await client.post(EMBEDDING_MODEL_URL, headers=headers, json=payload, timeout=30.0)
+            
+            if response.status_code == 200:
+                result = response.json()
+                # Handle nested list structure from feature-extraction
+                if isinstance(result, list) and len(result) > 0:
+                    if isinstance(result[0], list): return result[0]
+                    return result
+                return result
+            else:
+                print(f"[ERROR] HF Embedding failed: {response.status_code} - {response.text}")
+                return None
     except Exception as e:
-        print(f"Search Error: {e}")
+        print(f"[EXCEPTION] get_embedding: {e}")
         return None
+
+async def add_to_vector_db(content: str, filename: str, session_id: str):
+    chunks = [content[i:i+1000] for i in range(0, len(content), 800)]
+    tasks = [process_and_save_chunk(chunk, filename, session_id, i) for i, chunk in enumerate(chunks)]
+    await asyncio.gather(*tasks)
+
+async def process_and_save_chunk(chunk: str, filename: str, session_id: str, index: int):
+    embedding = await get_embedding(chunk)
+    if embedding:
+        doc = {
+            "session_id": session_id,
+            "filename": filename,
+            "chunk_index": index,
+            "content": chunk,
+            "embedding": embedding
+        }
+        await vector_collection.insert_one(doc)
+    else:
+        print(f"[SKIP] Embedding failed for chunk {index}")
+
+async def search_vector_db(session_id: str, query: str, top_k: int = 5):
+    query_embedding = await get_embedding(query)
+    if not query_embedding: return "RAG: Search skipped due to embedding error."
+    
+    pipeline = [
+        {
+            "$vectorSearch": {
+                "index": "vector_index", 
+                "path": "embedding",
+                "queryVector": query_embedding,
+                "numCandidates": 100,
+                "limit": top_k,
+                "filter": {"session_id": {"$eq": session_id}}
+            }
+        },
+        {
+            "$project": {
+                "content": 1,
+                "score": {"$meta": "vectorSearchScore"}
+            }
+        }
+    ]
+    
+    results = []
+    try:
+        async for doc in vector_collection.aggregate(pipeline):
+            results.append(doc["content"])
+    except Exception as e:
+        print(f"[MONGODB ERROR]: {e}")
+        return None
+    
+    return "\n---\n".join(results) if results else "RAG: No relevant local documents found."

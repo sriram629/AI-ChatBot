@@ -78,7 +78,7 @@ const ChatInput = ({
   return (
     <div
       className={cn(
-        "relative flex flex-col w-full bg-background rounded-2xl border border-border shadow-sm focus-within:ring-1 focus-within:ring-ring transition-all",
+        "relative flex flex-col w-full bg-background rounded-2xl border border-border shadow-sm transition-all focus-within:border-ring",
         className
       )}
     >
@@ -127,7 +127,7 @@ const ChatInput = ({
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={isUploading ? "Uploading..." : "Ask anything..."}
-          className="min-h-6 max-h-[200px] w-full resize-none bg-transparent border-0 p-2 shadow-none focus-visible:ring-0 text-sm placeholder:text-muted-foreground scrollbar-hide"
+          className="min-h-6 max-h-[200px] w-full resize-none bg-transparent border-0 p-2 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:ring-0 outline-none text-sm placeholder:text-muted-foreground scrollbar-hide"
           disabled={disabled && !isStreaming}
           rows={1}
         />

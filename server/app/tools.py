@@ -1,44 +1,124 @@
-import urllib.parse
-import random
+import os
+import asyncio
 from ddgs import DDGS
+import asyncio
+import httpx
 
-
-def search_web_tool(query: str):
-    print(f"Searching Web for: {query}")
+async def search_google_serper(query: str):
+    url = "https://google.serper.dev/search"
+    api_key = os.getenv("SERPER_API_KEY")
+    if not api_key:
+        return "Google Search Error: Missing SERPER_API_KEY"
+    headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
     try:
-        results = DDGS().text(query, max_results=4)
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json={"q": query}, headers=headers, timeout=10.0)
+            response.raise_for_status()
+            data = response.json()
+        results = data.get("organic", [])[:3]
+        if not results: return "Google: No results found."
+        return "\n".join(f"- {r.get('title')}: {r.get('snippet')} (Source: {r.get('link')})" for r in results)
+    except Exception as e:
+        return f"Google Search Error: {str(e)}"
 
-        if not results:
-            return "No results found."
+async def search_ddg_async(query: str):
+    def _search():
+        with DDGS() as ddgs:
+            return list(ddgs.text(query, max_results=3))
+    try:
+        results = await asyncio.to_thread(_search)
+        if not results: return "DuckDuckGo: No results found."
+        return "\n".join(f"- {r.get('title')}: {r.get('body')} (Source: {r.get('href')})" for r in results)
+    except Exception as e:
+        return f"DuckDuckGo Error: {str(e)}"
 
-        formatted = ""
-        for r in results:
-            formatted += (
-                f"- {r.get('title', 'No title')}: "
-                f"{r.get('body', 'No description')} "
-                f"(Source: {r.get('href', 'N/A')})\n"
+async def search_web_consensus(query: str):
+    google_res, ddg_res = await asyncio.gather(
+        search_google_serper(query),
+        search_ddg_async(query),
+        return_exceptions=True
+    )
+    return f"### GOOGLE\n{google_res}\n\n### DUCKDUCKGO\n{ddg_res}"
+
+AI_HORDE_API_KEY = "0000000000"
+BASE_URL = "https://stablehorde.net/api/v2"
+
+HEADERS = {
+    "apikey": AI_HORDE_API_KEY,
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "Client-Agent": "MyChatbot:1.0 (free-image-tool)",
+    "User-Agent": "MyChatbot/1.0",
+}
+
+async def generate_image_tool(prompt: str) -> str | None:
+    print("[AI-HORDE] Starting image generation")
+    print(f"[AI-HORDE] Prompt: {prompt}")
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        try:
+            print("[AI-HORDE] Submitting generation job...")
+            submit = await client.post(
+                f"{BASE_URL}/generate/async",
+                headers=HEADERS,
+                json={
+                    "prompt": prompt,
+                    "params": {
+                        "width": 576,
+                        "height": 576,
+                        "steps": 20,
+                        "sampler_name": "k_euler",
+                    },
+                },
             )
 
-        return formatted
+            print(f"[AI-HORDE] Submit status code: {submit.status_code}")
+            print(f"[AI-HORDE] Submit response: {submit.text}")
+            submit.raise_for_status()
 
-    except Exception as e:
-        print(f"Search Warning: {e}")
-        return "Couldn't search the web right now."
+            job_id = submit.json().get("id")
+            print(f"[AI-HORDE] Job ID: {job_id}")
 
+            if not job_id:
+                print("[AI-HORDE][ERROR] No job ID returned")
+                return None
 
-def generate_image_tool(prompt: str):
-    print(f"Generating Image for: {prompt}")
-    try:
-        clean_prompt = prompt.replace('"', "").replace("'", "")
-        encoded_prompt = urllib.parse.quote(clean_prompt)
-        seed = random.randint(0, 100000)
+        except Exception as e:
+            print(f"[AI-HORDE][ERROR] Job submission failed: {e}")
+            return None
 
-        image_url = (
-            "https://image.pollinations.ai/prompt/"
-            f"{encoded_prompt}?seed={seed}&nologo=true&width=1024&height=768"
-        )
+        # Poll
+        while True:
+            try:
+                print("[AI-HORDE] Checking job status...")
+                status = await client.get(
+                    f"{BASE_URL}/generate/status/{job_id}",
+                    headers=HEADERS,
+                )
 
-        return f"![Generated Image]({image_url})"
+                print(f"[AI-HORDE] Status code: {status.status_code}")
+                print(f"[AI-HORDE] Status response: {status.text}")
+                status.raise_for_status()
 
-    except Exception as e:
-        return f"Image Generation failed: {str(e)}"
+                data = status.json()
+
+                if data.get("done"):
+                    generations = data.get("generations", [])
+                    if not generations:
+                        print("[AI-HORDE][ERROR] Job done but generations empty")
+                        return None
+
+                    image_url = generations[0].get("img")
+                    if not image_url:
+                        print("[AI-HORDE][ERROR] Image URL missing in generation")
+                        return None
+
+                    print("[AI-HORDE] Image generated successfully")
+                    print(f"[AI-HORDE] Image URL: {image_url}")
+                    return f"![Generated Image]({image_url})"
+
+                await asyncio.sleep(2)
+
+            except Exception as e:
+                print(f"[AI-HORDE][ERROR] Polling error: {e}")
+                await asyncio.sleep(5)

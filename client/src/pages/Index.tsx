@@ -6,7 +6,6 @@ import logo from "@/assets/transparent-logo.png";
 const Index = () => {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background relative overflow-hidden">
-      {/* Floating background elements */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-20 left-10 w-32 h-32 bg-primary/20 rounded-full blur-3xl animate-float"></div>
         <div className="absolute bottom-20 right-10 w-40 h-40 bg-accent/20 rounded-full blur-3xl animate-float-delayed"></div>

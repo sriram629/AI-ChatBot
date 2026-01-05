@@ -25,13 +25,11 @@ if not os.path.exists("temp_uploads"):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    print("✅ Database Connected")
-    
+    print("Database initialized.")
     yield
-    
     if os.path.exists("temp_uploads"):
         shutil.rmtree("temp_uploads")
-        print("🧹 Cleaned up temporary files")
+        print("Temporary uploads directory cleaned up.")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -39,9 +37,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
-# allowed_hosts = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
-allowed_hosts = ["*"]
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
 
 origins = os.getenv("FRONTEND_URL", "http://localhost:5173").split(",")
 
@@ -49,7 +45,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -66,7 +62,15 @@ app.mount("/static", StaticFiles(directory="temp_uploads"), name="static")
 app.include_router(auth.router, prefix="/api/auth")
 app.include_router(chat.router, prefix="/api/chat")
 
-@app.get("/")
-@limiter.limit("5/minute")
-def home(request: Request):
-    return {"message": "AI Chatbot API Secure & Running"}
+@app.api_route("/", methods=["GET", "HEAD"])
+@limiter.limit("10/minute")
+async def home(request: Request):
+    return {"status": "online", "message": "AI Chatbot API Secure & Running"}
+
+@app.get("/health", include_in_schema=False)
+async def health_check():
+    return {"status": "healthy", "timestamp": os.times()[4]}
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(content="", media_type="image/x-icon")

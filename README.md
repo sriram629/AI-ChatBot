@@ -1,60 +1,100 @@
-# ⚡ AI-ChatBot: The Resilient Multi-Model Orchestrator
+# ⚡ Multimodal AI Chatbot: Resilient AI Orchestration Platform
 
-AI-ChatBot is a production-grade AI platform that orchestrates multiple LLM and Vision providers into a single, high-availability interface. By utilizing a "Self-Healing" architecture, it ensures that user requests are fulfilled even when primary APIs encounter rate limits or outages.
+Multimodal AI Chatbot is a production-grade AI platform that orchestrates multiple LLM providers into a single, high-availability interface. By implementing a multi-tier failover architecture, it ensures 100% service availability even when primary APIs encounter rate limits or outages.
 
 ---
 
 ## 🎯 The "Why"
-Traditional AI apps are fragile; they rely on a single API. **this AI_ChatBot** solves this by implementing an intelligent routing layer that automatically rotates between **Gemini, Groq, and Mistral**, while managing a crowdsourced **AI Horde** vision engine with automated fallbacks.
+Traditional AI apps are fragile; they rely on a single API. **Multimodal AI Chatbot** solves this by implementing an intelligent orchestration layer that automatically routes between **Gemini, Groq, and Mistral**, while managing a crowdsourced **AI Horde** vision engine with automated fallbacks.
 
 ---
 
 ## 🛠 Tech Stack
-* **Frontend:** React 19, Tailwind CSS, Lucide Icons
+* **Frontend:** React 19, TypeScript, Vite, Tailwind CSS
 * **Backend:** FastAPI (Python 3.11), Uvicorn
-* **AI Orchestration:** Gemini 2.0 Flash, Groq (Llama 3.3), Mistral AI
-* **Vision Engine:** AI Horde (Stable Diffusion), Pollinations CDN
-* **Database & RAG:** MongoDB (Beanie ODM), DuckDuckGo Search API
-* **Security:** SlowAPI (Rate Limiting), JWT Authentication, CORS Middleware
+* **Real-Time:** WebSockets (Socket.io) for asynchronous task streaming
+* **AI Orchestration:** Gemini 2.0 Flash (with Function Calling), Groq (Llama 3.3), Mistral AI
+* **Database & RAG:** MongoDB Atlas (Vector Search), Beanie ODM
+* **Security:** Bcrypt Password Hashing, OAuth2.0 (Google/GitHub), SMTP OTP Verification, JWT
 
 ---
 
 ## 🔄 System Architecture & Flow
 
-The following flowchart represents how OmniGen AI handles a user request from intent detection to final fulfillment:
+The following flowchart represents how Multimodal AI Chatbot handles a user request from intent detection to final fulfillment:
 
 ```mermaid
 graph TD
-    A[User Message] --> B{Intent Detection}
-    B -- "IMAGE" --> C[AI Horde Vision Engine]
-    C -- "Success < 2min" --> D[Display Image]
-    C -- "Timeout/Fail" --> E[Pollinations CDN Fallback]
-    E --> D
+    A[User Message] --> B[WebSocket Session Creation]
+    B --> C{Intent Detection via Small LLM}
+    C -- "IMAGE" --> D[AI Horde Vision Engine]
+    D -- "Success < 2min" --> E[Display Image]
+    D -- "Timeout/Fail" --> F[Pollinations CDN Fallback]
+    F --> E
     
-    B -- "COMPLEX" --> F[Search & RAG Layer]
-    F --> G[Primary: Gemini 2.0]
-    G -- "Error 429/500" --> H[Backup: Groq Llama 3.3]
-    H -- "Error" --> I[Safety: Mistral AI]
-    G --> J[Stream to Frontend]
-    H --> J
-    I --> J
+    C -- "COMPLEX" --> G[Hybrid RAG Pipeline]
+    G --> H[MongoDB Vector Search]
+    G --> I[Gemini Function Calling]
+    I -- "Web Search Needed" --> J[Parallel SerpAPI: Google + DuckDuckGo]
+    J --> K[Primary: Gemini 2.0]
+    H --> K
+    K -- "Error 429/500" --> L[Backup: Groq Llama 3.3]
+    L -- "Error" --> M[Safety: Mistral AI]
+    K --> N[Stream to Frontend]
+    L --> N
+    M --> N
+    
+    C -- "SIMPLE" --> O[Direct LLM Response]
+    O --> N
+    
+    B --> P[Parallel: Smart Title Generation]
+    P -- "Gemini → Groq → Mistral" --> Q[Update Chat History]
 ```
 
 ## ✨ Key Features
 
-* **🧠 Intelligent Intent Detection:** Employs a high-speed **Llama 3.1-8B** model to classify user requests into `IMAGE`, `SIMPLE`, or `COMPLEX` categories in $<200ms$, ensuring low-latency routing.
-* **🎨 Resilient Vision Engine:** A custom-built **AI Horde** integration designed to manage deep queues with a strict 120s "Circuit Breaker" to prevent server hangs and ensure reliable image delivery.
-* **🔍 Contextual RAG & Web Search:** Intelligently merges local vector database results with live **DuckDuckGo** web consensus to provide factually accurate, up-to-date responses.
-* **🛡️ Production Security:** Enterprise-ready security featuring XSS protection, hardened security headers, and dynamic rate limiting to prevent API abuse.
+### 🧠 AI Orchestration & Resilience
+* **Multi-LLM Failover System:** Architected a three-tier failover architecture (Gemini → Groq → Mistral) maintaining 100% service availability during API outages
+* **Intelligent Intent Detection:** Employs a high-speed small LLM model to classify user requests into `IMAGE`, `SIMPLE`, or `COMPLEX` categories in <200ms, ensuring low-latency routing
+* **Gemini Function Calling:** Leverages native function calling to dynamically decide between web search and image generation workflows
 
-## 🧠 Challenges & Solutions: The Horde Bottleneck
+### 🔍 Hybrid RAG Pipeline
+* **Contextual Search:** Combines MongoDB Vector Embeddings with real-time web data to provide context-aware responses from both uploaded documents and live information
+* **Parallel Web Search:** Integrates SerpAPI to fetch results simultaneously from Google and DuckDuckGo, merging consensus data for factually accurate responses
+* **Document Processing:** Supports multimodal inputs including PDFs and images with vector embedding storage for semantic search
+
+### 🎨 Resilient Vision Engine
+* **AI Horde Integration:** Custom-built crowdsourced image generation with dynamic polling based on queue position
+* **Circuit Breaker Pattern:** Implements a strict 120s timeout with automatic fallback to Pollinations CDN to prevent server hangs
+* **Smart Polling:** Adaptive polling intervals (30s for queue >50, 5s for queue <10) to stay within rate limits while maintaining responsiveness
+
+### 🔐 Identity Management System
+* **Secure Authentication:** Bcrypt password hashing with custom SMTP-based OTP verification workflow
+* **Social OAuth2.0:** Seamless integration with Google and GitHub login providers
+* **JWT Authorization:** Token-based session management with configurable expiration
+
+### ⚡ Asynchronous Architecture
+* **WebSocket Streaming:** Real-time response streaming with parallel task execution
+* **Concurrent Processing:** Simultaneous handling of intent detection, smart-title generation, and multimodal processing
+* **Session Management:** Automatic chat session creation and history tracking
+
+### 🖥️ Responsive Interface
+* **Modern UI:** Tailwind CSS-powered responsive design with sidebar, navbar, and main content areas
+* **Chat History Management:** Sidebar navigation for previous conversations and new chat creation
+* **User Profile:** Integrated profile management and signout functionality in navbar
+
+---
+
+## 🧠 Technical Deep Dive: The Horde Bottleneck Challenge
 
 **The Challenge:** Integrating the **AI Horde** presented a significant reliability hurdle. Unlike centralized paid APIs, crowdsourced workers can drop jobs, queues often exceed 150+ positions, and aggressive polling quickly triggers `429 Too Many Requests` errors.
 
 **The Solution:** I engineered a **Dynamic Polling & Safety Lifecycle** to manage these variables:
 
-1.  **State-Based Polling:** Instead of fixed intervals, the system dynamically checks the `queue_position`. If the position is $>50$, it sleeps for 30s; if it drops below $10$, it sleeps for 5s. This stays within rate limits while maintaining responsiveness as the job nears completion.
+1.  **State-Based Polling:** Instead of fixed intervals, the system dynamically checks the `queue_position`. If the position is >50, it sleeps for 30s; if it drops below 10, it sleeps for 5s. This stays within rate limits while maintaining responsiveness as the job nears completion.
 2.  **Strict 120s Circuit Breaker:** I implemented a hard wall-clock timeout. If the Horde does not deliver within 2 minutes, the system intercepts the request and injects a high-speed **Pollinations CDN fallback**, ensuring the user receives a visual result without the server ever hanging.
+
+---
 
 ## 🚀 Step-by-Step Setup
 
@@ -67,7 +107,7 @@ git clone (project_Clone_url)
 ```
 
 ### 2. Backend Configuration (FastAPI)
-The backend manages AI orchestration and the Vision Engine.
+The backend manages AI orchestration, WebSocket connections, and the Vision Engine.
 
 ```bash
 # Navigate to server directory
@@ -82,7 +122,7 @@ pip install -r requirements.txt
 ```
 
 ### 3. Frontend Configuration (React)
-The frontend provides the interactive chat interface.
+The frontend provides the interactive chat interface with real-time WebSocket streaming.
 
 ```bash
 # Navigate to client directory
@@ -93,7 +133,7 @@ npm install
 ```
 
 ### 4. Environment Variables
-Create a `.env` file in the /server folder and populate it with your API keys:
+Create a `.env` file in the `/server` folder and populate it with your API keys:
 
 ```bash
 # --- SERVER CONFIG ---
@@ -115,7 +155,7 @@ HF_TOKEN=your_huggingface_token_here
 # --- SEARCH & DATA ---
 # Get this from serper.dev (free tier available)
 SERPER_API_KEY=your_serper_api_key_here
-# MongoDB Atlas Connection String
+# MongoDB Atlas Connection String with Vector Search enabled
 MONGO_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/omnigen?retryWrites=true&w=majority
 
 # --- SECURITY ---
@@ -123,43 +163,80 @@ MONGO_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/omnigen?retryWrite
 JWT_SECRET=your_super_secret_random_string
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
+
+# --- SMTP OTP VERIFICATION ---
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_EMAIL=your_email@gmail.com
+SMTP_PASSWORD=your_app_specific_password
 ```
 
-Create a `.env` file in the /client folder and populate it with your API keys:
+Create a `.env` file in the `/client` folder:
 ```bash
 VITE_GOOGLE_CLIENT_ID=your_google_client_ID
-
 VITE_GITHUB_CLIENT_ID=your_github_client_ID
-
-VITE_API_URL="http://127.0.0.1:8000" or "your deployed live backend Url"
+VITE_API_URL="http://127.0.0.1:8000"  # or your deployed backend URL
 ```
 
 ### 5. Running the Application
-* **Open two terminal windows to run both services simultaneously:**
+Open two terminal windows to run both services simultaneously:
 
-* **Terminal 1 (Backend): uvicorn main:app --reload**
+**Terminal 1 (Backend):**
+```bash
+cd server
+uvicorn main:app --reload
+```
 
-* **Terminal 2 (Frontend): npm run dev**
+**Terminal 2 (Frontend):**
+```bash
+cd client
+npm run dev
+```
 
-### 6. API Response & Performance Metrics
+The application will be available at `http://localhost:5173`
+
+---
+
 ## 📊 Performance Benchmarks
 | Intent Type | Model Used | Avg. Latency | Fallback Logic |
 | :--- | :--- | :--- | :--- |
-| **Simple** | Llama 3.1-8B | ~150ms | N/A |
-| **Complex** | Gemini 2.0 Flash | ~800ms | Groq (Llama 3.3) |
-| **Image** | AI Horde | 30s - 120s |
+| **Simple** | Small LLM (Intent) | ~150ms | Direct Response |
+| **Complex** | Gemini 2.0 Flash | ~800ms | Groq (Llama 3.3) → Mistral |
+| **Image** | AI Horde | 30s - 120s | Pollinations CDN |
+| **Web Search** | SerpAPI (Parallel) | ~500ms | N/A |
+| **Title Gen** | Gemini → Groq → Mistral | ~300ms | Multi-tier Fallback |
 
+---
 
-### 7. 🛡️ API Error Handling & Fallback Strategy
-## 🛡️ Resilience Strategy
-This project implements a multi-tier fallback system to ensure 99.9% uptime for AI responses:
-1. **Tier 1 (Primary):** Google Gemini 2.0 (High reasoning, multimodal).
-2. **Tier 2 (Latency Fallback):** Groq Llama 3.3 (Triggered if Gemini latency > 2s).
-3. **Tier 3 (Safety Fallback):** Mistral AI (Triggered if primary providers return 429 or 500 errors).
+## 🛡️ Multi-Tier Failover Strategy
+This project implements a resilient orchestration system to ensure 100% service availability:
 
+1. **Tier 1 (Primary):** Google Gemini 2.0 Flash (High reasoning, multimodal, function calling)
+2. **Tier 2 (Latency Fallback):** Groq Llama 3.3 (Triggered if Gemini returns 429/500 errors)
+3. **Tier 3 (Safety Fallback):** Mistral AI (Final fallback if all primary providers fail)
+
+This architecture applies to both **chat responses** and **smart title generation**, ensuring continuous operation even during provider outages.
+
+---
+
+## 🔄 Request Lifecycle
+1. User sends message → WebSocket session created
+2. Session initialization → Chat history retrieved
+3. **Parallel Execution:**
+   - Intent detection (small LLM)
+   - Smart title generation (Gemini → Groq → Mistral)
+   - RAG vector search in MongoDB
+4. Based on intent:
+   - **Image:** AI Horde (with fallback)
+   - **Complex:** Gemini Function Calling → Web search if needed → LLM response with failover
+   - **Simple:** Direct LLM response
+5. Stream response to frontend via WebSocket
+
+---
 
 [![Live Demo](https://img.shields.io/badge/demo-online-brightgreen.svg?style=for-the-badge&logo=render)](https://ai-chatbot-frontend-yq89.onrender.com)
 
+---
 
 ## 🖼️ Full Gallery
 
@@ -178,3 +255,42 @@ This project implements a multi-tier fallback system to ensure 99.9% uptime for 
 ![Chat](./screenshots/Chat_page.png)
 
 </details>
+
+---
+
+## 🏗️ Project Structure
+```
+multimodal-ai-chatbot/
+├── client/                 # React + TypeScript + Vite frontend
+│   ├── src/
+│   │   ├── components/    # UI components (Sidebar, Navbar, Chat)
+│   │   ├── contexts/      # WebSocket and Auth contexts
+│   │   └── pages/         # Authentication and Chat pages
+│   └── .env
+├── server/                # FastAPI backend
+│   ├── routes/            # API endpoints
+│   ├── services/          # AI orchestration logic
+│   ├── models/            # MongoDB models
+│   └── .env
+└── README.md
+```
+
+---
+
+## 🤝 Contributing
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+---
+
+## 📝 License
+This project is open source and available under the MIT License.
+
+---
+
+## 🔗 Links
+- **Live Demo:** [ai-chatbot-frontend-yq89.onrender.com](https://ai-chatbot-frontend-yq89.onrender.com)
+- **Report Issues:** [GitHub Issues](#)
+
+---
+
+**Built with ❤️ using React, TypeScript, FastAPI, and MongoDB**

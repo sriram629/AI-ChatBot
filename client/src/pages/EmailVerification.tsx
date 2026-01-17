@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,17 +13,27 @@ import {
   InputOTPGroup,
   InputOTPSlot,
 } from "@/components/ui/input-otp";
-import { Loader2 } from "lucide-react";
+import { Loader2, Mail } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
 import logo from "@/assets/transparent-logo.png";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 const EmailVerification = () => {
   const [value, setValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
+  const [isResending, setIsResending] = useState(false);
+  const [countdown, setCountdown] = useState(0);
 
-  const { verifyEmail } = useAuth();
+  const navigate = useNavigate();
+  const { verifyEmail, resendOtp, userEmail } = useAuth();
+
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
 
   const handleVerify = async () => {
     if (value.length === 6) {
@@ -39,8 +49,22 @@ const EmailVerification = () => {
     }
   };
 
-  const handleResend = () => {
-    setValue("");
+  const handleResend = async () => {
+    if (!userEmail) {
+      toast.error("User email session expired. Please register again.");
+      return;
+    }
+
+    setIsResending(true);
+    try {
+      await resendOtp(userEmail);
+      setCountdown(60);
+      setValue("");
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsResending(false);
+    }
   };
 
   return (
@@ -51,12 +75,16 @@ const EmailVerification = () => {
             <img src={logo} alt="AI Chat Logo" className="w-20 h-20" />
           </div>
           <CardTitle className="text-2xl text-center">
-            Check your email
+            Verify your email
           </CardTitle>
-          <CardDescription className="text-center">
-            We've sent a 6-digit verification code to your email
+          <CardDescription className="text-center flex flex-col items-center gap-2">
+            <span className="flex items-center gap-2 text-primary font-medium">
+              <Mail className="w-4 h-4" /> {userEmail || "your email"}
+            </span>
+            We've sent a 6-digit verification code to the address above.
           </CardDescription>
         </CardHeader>
+
         <CardContent className="space-y-6">
           <div className="flex justify-center">
             <InputOTP
@@ -64,40 +92,24 @@ const EmailVerification = () => {
               value={value}
               onChange={setValue}
               disabled={isLoading}
+              autoFocus
             >
               <InputOTPGroup className="gap-3">
-                <InputOTPSlot
-                  index={0}
-                  className="w-12 h-14 text-lg border-2"
-                />
-                <InputOTPSlot
-                  index={1}
-                  className="w-12 h-14 text-lg border-2"
-                />
-                <InputOTPSlot
-                  index={2}
-                  className="w-12 h-14 text-lg border-2"
-                />
-                <InputOTPSlot
-                  index={3}
-                  className="w-12 h-14 text-lg border-2"
-                />
-                <InputOTPSlot
-                  index={4}
-                  className="w-12 h-14 text-lg border-2"
-                />
-                <InputOTPSlot
-                  index={5}
-                  className="w-12 h-14 text-lg border-2"
-                />
+                {[...Array(6)].map((_, i) => (
+                  <InputOTPSlot
+                    key={i}
+                    index={i}
+                    className="w-12 h-14 text-lg border-2"
+                  />
+                ))}
               </InputOTPGroup>
             </InputOTP>
           </div>
 
           <Button
             onClick={handleVerify}
-            className="w-full"
-            disabled={value.length !== 6 || isLoading}
+            className="w-full h-11"
+            disabled={value.length !== 6 || isLoading || isResending}
           >
             {isLoading ? (
               <>
@@ -105,18 +117,28 @@ const EmailVerification = () => {
                 Verifying...
               </>
             ) : (
-              "Verify Email"
+              "Verify & Continue"
             )}
           </Button>
 
-          <div className="text-center">
+          <div className="text-center space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Didn't receive the code?
+            </p>
             <button
               onClick={handleResend}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors"
-              disabled={isLoading}
+              disabled={isLoading || isResending || countdown > 0}
+              className="text-sm font-medium text-primary hover:underline disabled:text-muted-foreground disabled:no-underline transition-all"
             >
-              Didn't receive the code?{" "}
-              <span className="text-primary">Resend</span>
+              {isResending ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Sending...
+                </span>
+              ) : countdown > 0 ? (
+                `Resend available in ${countdown}s`
+              ) : (
+                "Resend OTP"
+              )}
             </button>
           </div>
         </CardContent>

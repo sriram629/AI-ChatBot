@@ -20,25 +20,26 @@ interface AuthContextType {
     email: string,
     pass: string,
     first: string,
-    last: string
+    last: string,
   ) => Promise<void>;
   verifyEmail: (otp: string) => Promise<void>;
   requestPasswordReset: (email: string, newPass: string) => Promise<void>;
   confirmPasswordReset: (
     email: string,
     otp: string,
-    newPass: string
+    newPass: string,
   ) => Promise<void>;
   loginWithGoogle: (accessToken: string) => Promise<void>;
   loginWithGithub: (code: string) => Promise<void>;
   logout: () => void;
+  resendOtp: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [token, setToken] = useState<string | null>(
-    localStorage.getItem("token")
+    localStorage.getItem("token"),
   );
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [firstName, setFirstName] = useState<string | null>(null);
@@ -91,7 +92,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     email: string,
     pass: string,
     first: string,
-    last: string
+    last: string,
   ) => {
     try {
       await api.post("/api/auth/register", {
@@ -104,6 +105,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       toast.success("OTP sent to your email!");
     } catch (error: any) {
       toast.error(error.response?.data?.detail || "Registration failed");
+      throw error;
+    }
+  };
+
+  const resendOtp = async (email: string) => {
+    try {
+      await api.post("/api/auth/resend-otp", { email });
+      toast.success("A new code has been sent!");
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "Failed to resend OTP");
       throw error;
     }
   };
@@ -139,7 +150,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const confirmPasswordReset = async (
     email: string,
     otp: string,
-    newPass: string
+    newPass: string,
   ) => {
     await api.post("/api/auth/reset-password-confirm", {
       email,
@@ -201,6 +212,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         loginWithGoogle,
         loginWithGithub,
         logout,
+        resendOtp,
       }}
     >
       {children}

@@ -45,6 +45,9 @@ class ResetPasswordConfirm(BaseModel):
     otp: str
     new_password: str
 
+class Resend_OTP(BaseModel):
+    email: EmailStr
+
 # --- HELPERS ---
 def get_password_hash(password):
     return pwd_context.hash(password)
@@ -142,6 +145,28 @@ async def login(data: LoginRequest):
         
     token = create_access_token({"sub": user.email})
     return {"access_token": token, "token_type": "bearer"}
+
+@router.post("/resend-otp", tags=["Authentication"])
+async def resend_otp(data: Resend_OTP):
+    user = await User.find_one(User.email == data.email)
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.is_verified:
+        return {"message": "Email already verified"}
+    new_otp = generate_otp()
+    user.otp_code = new_otp
+    user.otp_expires_at = datetime.utcnow() + timedelta(minutes=10)
+    await user.save()
+    
+    try:
+        await send_otp_email(user.email, new_otp)
+    except Exception as e:
+        print(f"RESEND EMAIL ERROR: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send email.")
+        
+    return {"message": "A new OTP has been sent to your email"}
 
 @router.post("/forgot-password", tags=["Authentication"])
 async def forgot_password(data: ResetPasswordRequest):

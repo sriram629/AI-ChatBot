@@ -108,6 +108,7 @@ async def register(user_data: UserRegister):
     await new_user.insert()
     
     try:
+        print("user:", user_data.email)
         await send_otp_email(user_data.email, otp)
     except Exception as e:
         print(f"EMAIL ERROR: {e}")

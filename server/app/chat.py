@@ -23,8 +23,8 @@ mistral_client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
 
 hf_token = os.getenv("HF_API_KEY")
 
-gemini_model = genai.GenerativeModel(model_name='gemini-2.0-flash-lite')
-title_model = genai.GenerativeModel('gemini-2.0-flash-lite')
+gemini_model = genai.GenerativeModel(model_name='gemini-2.5-flash-lite')
+title_model = genai.GenerativeModel('gemini-2.5-flash-lite')
 
 current_date = datetime.now().strftime("%A, %B %d, %Y")
 

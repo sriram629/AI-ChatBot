@@ -14,6 +14,8 @@ from .utils import handle_file_upload
 from .tools import search_web_consensus, generate_image_tool
 from .rag import add_to_vector_db, search_vector_db
 from beanie.operators import Exists
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -112,10 +114,14 @@ async def call_gemini(prompt, history, websocket, context):
                 full_resp += chunk.text
                 await safe_send(websocket, {"type": "chunk", "content": chunk.text})
         return full_resp
-    except:
-        await safe_send(websocket, {"type": "status", "content": "Gemini busy, trying backup..."})
+    except Exception:
+        logger.exception("Gemini request failed")
+        await safe_send(websocket, {
+            "type": "status",
+            "content": "Gemini failed, trying backup..."
+        })
         return await call_groq(prompt, history, websocket, context)
-
+        
 @router.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
     user = await get_ws_user(token)
@@ -183,7 +189,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
             if session.title == "New Chat":
                 asyncio.create_task(generate_smart_title(session_id, user_msg, websocket))
 
-    except Exception: pass
+    except WebSocketDisconnect:
+        return
+    except Exception:
+        logger.exception("Chat request failed")
+        await safe_send(websocket, {
+            "type": "chunk",
+            "content": "Chat failed. Please try again."
+        })
+        await safe_send(websocket, {"type": "end"})
 
 async def get_formatted_history(session_id: str):
     msgs = await ChatMessage.find(ChatMessage.session_id == session_id).sort(-ChatMessage.timestamp).limit(5).to_list()

@@ -12,6 +12,16 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 class SessionControlTests(unittest.IsolatedAsyncioTestCase):
+    async def test_delete_owned_session(self):
+        session = SimpleNamespace(set=AsyncMock())
+        with patch.object(chat, 'get_owned_session', AsyncMock(return_value=session)):
+            self.assertEqual(await chat.delete_session('one', object()), {'deleted': True})
+        session.set.assert_awaited_once_with({'is_deleted': True})
+
+    async def test_delete_foreign_session_denied(self):
+        with patch.object(chat, 'get_owned_session', AsyncMock(side_effect=HTTPException(404))):
+            with self.assertRaises(HTTPException): await chat.delete_session('foreign', object())
+
     async def test_rename_owned_session(self):
         session = SimpleNamespace(session_id='one', title='old', save=AsyncMock())
         with patch.object(chat, 'get_owned_session', AsyncMock(return_value=session)):

@@ -54,7 +54,7 @@ async def safe_send(websocket: WebSocket, data: dict):
 async def get_owned_session(session_id: str, user: User):
     session = await ChatSession.find_one(
         ChatSession.session_id == session_id, ChatSession.user_email == user.email)
-    if not session:
+    if not session or getattr(session, "is_deleted", False):
         raise HTTPException(404, "Session not found")
     return session
 
@@ -318,7 +318,7 @@ async def create_session(user: User = Depends(get_current_user)):
 
 @router.get("/sessions")
 async def get_sessions(user: User = Depends(get_current_user)):
-    return await ChatSession.find(ChatSession.user_email == user.email).sort(-ChatSession.updated_at).to_list()
+    return await ChatSession.find(ChatSession.user_email == user.email, {"is_deleted": {"$ne": True}}).sort(-ChatSession.updated_at).to_list()
 
 @router.get("/sessions/{session_id}/messages")
 async def get_messages(session_id: str, user: User = Depends(get_current_user)):
@@ -339,6 +339,14 @@ async def rename_session(session_id: str, data: RenameSessionRequest, user: User
     session.title = data.title
     await session.save()
     return {"session_id": session.session_id, "title": session.title}
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str, user: User = Depends(get_current_user)):
+    session = await get_owned_session(session_id, user)
+    # Soft deletion keeps this UI operation recoverable without a multi-collection transaction.
+    await session.set({"is_deleted": True})
+    return {"deleted": True}
+
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):

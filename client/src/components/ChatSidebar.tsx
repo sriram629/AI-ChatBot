@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Loader2 } from "lucide-react";
+import { Plus, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Loader2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/transparent-logo.png";
 import { api } from "@/lib/api";
 import SessionRename from "./SessionRename";
+import SessionDelete from "./SessionDelete";
 
 export interface Session { session_id: string; title: string; updated_at: string; }
 interface Props { isOpen: boolean; onToggle: () => void; currentChatId?: string; }
@@ -16,6 +17,7 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId }: Props) => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [renaming, setRenaming] = useState<Session | null>(null);
+  const [deleting, setDeleting] = useState<Session | null>(null);
   const fetchSessions = useCallback(async () => {
     try { const res = await api.get("/api/chat/sessions"); setSessions(res.data); setLoadError(false); }
     catch { setLoadError(true); }
@@ -52,11 +54,16 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId }: Props) => {
                 {isOpen && <span className="min-w-0"><span className="block truncate text-sm">{session.title || "New chat"}</span><span className="mt-0.5 block text-xs text-muted-foreground">{new Date(session.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></span>}
               </button>
               {isOpen && <Button variant="ghost" size="icon" aria-label={"Rename " + session.title} onClick={() => setRenaming(session)} className="mr-1 h-8 w-8 shrink-0"><Pencil className="h-3.5 w-3.5 text-muted-foreground" /></Button>}
+              {isOpen && <Button variant="ghost" size="icon" aria-label={"Delete " + session.title} onClick={() => setDeleting(session)} className="mr-1 h-8 w-8 shrink-0"><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></Button>}
             </div>
           ))}
         </div>
       </ScrollArea>
       {renaming && <SessionRename session={renaming} onClose={() => setRenaming(null)} onSaved={() => { setRenaming(null); fetchSessions(); }} />}
+      {deleting && <SessionDelete session={deleting} onClose={() => setDeleting(null)} onDeleted={() => {
+        if (deleting.session_id === currentChatId) navigate("/chat");
+        setDeleting(null); fetchSessions();
+      }} />}
     </aside>
   );
 };

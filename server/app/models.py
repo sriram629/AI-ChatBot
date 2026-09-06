@@ -25,6 +25,7 @@ class ChatMessage(Document):
         name = "chat_messages"
 
 class ChatSession(Document):
+    is_deleted: bool = False
     session_id: str = Field(default_factory=lambda: str(PydanticObjectId()))
     user_email: str
     title: str

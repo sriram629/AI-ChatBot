@@ -12,10 +12,11 @@ interface ChatInputProps {
   isStreaming?: boolean;
   disabled?: boolean;
   className?: string;
+  suggestion?: { text: string; id: number };
 }
 const extensions = /\.(pdf|txt|md|py|js|png|jpe?g|webp|gif)$/i;
 
-const ChatInput = ({ onSend, onStop, isStreaming, disabled, className }: ChatInputProps) => {
+const ChatInput = ({ onSend, onStop, isStreaming, disabled, className, suggestion }: ChatInputProps) => {
   const [content, setContent] = useState("");
   const [attachment, setAttachment] = useState<any>(null);
   const [upload, setUpload] = useState<{ name: string; percent: number } | null>(null);
@@ -24,6 +25,9 @@ const ChatInput = ({ onSend, onStop, isStreaming, disabled, className }: ChatInp
   const fileInputRef = useRef<HTMLInputElement>(null);
   const controller = useRef<AbortController | null>(null);
   const hintId = useId();
+  useEffect(() => {
+    if (suggestion) { setContent(suggestion.text); textareaRef.current?.focus(); }
+  }, [suggestion]);
   useEffect(() => () => controller.current?.abort(), []);
   useEffect(() => {
     if (textareaRef.current) {

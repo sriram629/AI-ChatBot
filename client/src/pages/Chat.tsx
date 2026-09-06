@@ -25,6 +25,7 @@ const Chat = () => {
     else contentRef.current?.removeAttribute('inert');
   }, [isMobile, sidebarOpen]);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [suggestion, setSuggestion] = useState<{ text: string; id: number }>();
   const profileRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -197,8 +198,8 @@ const Chat = () => {
               </div>
             </div>
           ) : isNewChat ? (
-            <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center p-4">
-              <div className="w-full max-w-2xl flex flex-col items-center gap-6 sm:gap-8 text-center animate-in fade-in duration-700">
+            <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center p-4">
+              <div className="my-auto w-full max-w-2xl flex flex-col items-center gap-5 sm:gap-8 py-6 text-center animate-in fade-in duration-700">
                 <img
                   src={logo}
                   alt="AI"
@@ -209,10 +210,20 @@ const Chat = () => {
                 </h2>
                 <div className="w-full px-2">
                   <ChatInput
+                    suggestion={suggestion}
                     onSend={handleSendMessage}
                     disabled={isConnecting}
                     className="shadow-2xl sm:scale-105"
                   />
+                </div>
+                <div aria-label="Ideas to get started" className="grid w-full grid-cols-2 gap-2 text-left">
+                  {[
+                    ["Understand a document", "Summarize the document I attach and list its key takeaways."],
+                    ["Explain a concept", "Explain how neural networks learn, using a simple everyday example."],
+                    ["Explore the web", "/search What are the latest developments in renewable energy?"],
+                    ["Create an image", "Generate an image of a cozy reading nook beside a rainy window."],
+                  ].map(([label, text]) => <button key={label} onClick={() => setSuggestion({ text, id: Date.now() })}
+                    className="rounded-xl border border-border px-3 py-3 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">{label}</button>)}
                 </div>
               </div>
             </div>

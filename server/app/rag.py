@@ -96,3 +96,10 @@ async def search_vector_db(session_id: str, query: str, top_k: int = 5):
         return None
     
     return "\n---\n".join(results) if results else "RAG: No relevant local documents found."
+
+async def has_session_documents(session_id: str) -> bool:
+    """Avoid embedding requests for sessions without stored document chunks."""
+    return await vector_collection.find_one(
+        {"session_id": session_id}, {"_id": 1}
+    ) is not None
+

@@ -12,7 +12,7 @@ from datetime import datetime
 from beanie import PydanticObjectId
 from .utils import handle_file_upload
 from .tools import search_web_consensus, generate_image_tool
-from .rag import add_to_vector_db, search_vector_db
+from .rag import add_to_vector_db, search_vector_db, has_session_documents
 from beanie.operators import Exists
 import logging
 logger = logging.getLogger(__name__)
@@ -112,7 +112,8 @@ async def call_groq(prompt, history, websocket, context):
                 full_resp += content
                 await safe_send(websocket, {"type": "chunk", "content": content})
         return full_resp
-    except:
+    except Exception:
+        logger.exception("Groq request failed")
         await safe_send(websocket, {"type": "status", "content": "Switching to safety fallback..."})
         return await call_mistral(prompt, history, websocket, context)
 
@@ -139,6 +140,13 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
     user = await get_ws_user(token)
     if not user:
         await websocket.close(code=1008); return
+    session = await ChatSession.find_one(
+        ChatSession.session_id == session_id,
+        ChatSession.user_email == user.email,
+    )
+    if not session:
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
     try:
         while True:
@@ -147,10 +155,13 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
             msg_type, user_msg = payload.get("type", "message"), payload.get("message", "")
             temp_id, attachment = payload.get("tempId"), payload.get("attachment")
             
-            session = await ChatSession.find_one(ChatSession.session_id == session_id)
+            session = await ChatSession.find_one(
+                ChatSession.session_id == session_id,
+                ChatSession.user_email == user.email,
+            )
             if not session:
-                session = await ChatSession(session_id=session_id, user_email=user.email, title="New Chat").insert()
-                await safe_send(websocket, {"type": "refresh-sessions"})
+                await websocket.close(code=1008)
+                return
             
             if msg_type in ["edit", "regenerate"]:
                 trigger = await ChatMessage.find_one(ChatMessage.session_id == session_id, ChatMessage.content == user_msg)
@@ -184,9 +195,24 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
                 await safe_send(websocket, {"type": "end"})
             else:
                 context = "No external context available."
-                if attachment and attachment.get("type") == "text":
-                    rag_ctx = await search_vector_db(session_id, user_msg)
-                    context = f"RAG: {rag_ctx or 'No relevant local documents found.'}"
+                if await has_session_documents(session_id):
+                    try:
+                        rag_ctx = await asyncio.wait_for(
+                            search_vector_db(session_id, user_msg), timeout=35
+                        )
+                        context = f"RAG: {rag_ctx or 'No relevant local documents found.'}"
+                    except Exception:
+                        logger.exception("Document retrieval failed")
+                        context = "Document retrieval is unavailable; do not invent document contents."
+                # /search works with the existing chat UI; clients may also send web_search=true.
+                if payload.get("web_search") is True or user_msg.lower().startswith("/search "):
+                    query = user_msg[8:].strip() if user_msg.lower().startswith("/search ") else user_msg
+                    try:
+                        web_ctx = await asyncio.wait_for(search_web_consensus(query), timeout=15)
+                        context += f"\nSEARCH: {web_ctx}"
+                    except Exception:
+                        logger.exception("Web search failed")
+                        context += "\nWeb search is unavailable; do not claim to have searched."
                 history = await get_formatted_history(session_id)
                 
                 if intent == "COMPLEX":
@@ -253,3 +279,4 @@ async def get_messages(session_id: str, user: User = Depends(get_current_user)):
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):
     return await handle_file_upload(file)
+

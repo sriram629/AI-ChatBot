@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useRef, useEffect, useId } from "react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { ArrowUp, Square, Paperclip, X, FileText, Loader2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -98,14 +97,14 @@ const ChatInput = ({ onSend, onStop, isStreaming, isStopping, disabled, classNam
         </div>
       )}
       {error && <p role="alert" className="px-4 pt-3 text-sm text-red-400">{error}</p>}
-      <Textarea
+      <textarea
         ref={textareaRef} aria-label="Message" aria-describedby={hintId} value={content}
         onChange={e => setContent(e.target.value)} maxLength={20000}
         onKeyDown={e => {
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSend(); }
         }}
         placeholder={attachment ? "Ask a question about this file…" : "Ask anything…"}
-        className="min-h-16 max-h-44 resize-none border-0 bg-transparent px-4 py-4 text-base shadow-none focus-visible:ring-0"
+        className="block min-h-14 max-h-44 w-full resize-none rounded-none border-0 bg-transparent px-4 pt-4 pb-2 text-base shadow-none outline-none placeholder:text-muted-foreground focus:ring-0 focus:ring-offset-0 focus:shadow-none focus:outline-none disabled:opacity-50"
         disabled={disabled} rows={1}
       />
       <div className="flex items-center justify-between gap-2 px-3 pb-3">

@@ -107,7 +107,7 @@ Run `npm run dev` and open [localhost:5173](http://localhost:5173). Backend docu
 
 Run `npm run build` from `client`. The Node.js CI workflow checks the frontend build on pushes.
 
-The temporary browser and backend test files used during development have been removed from the final tree. There is no retained Playwright test workflow.
+The browser suite and session-control tests introduced on the UI branch have been removed from the final tree, along with the Playwright test workflow. The pre-existing backend reliability suite remains; run it from the repository root with the server environment active using `python -m unittest discover -s server/tests`.
 
 Before deployment, check sending and stopping, PDF questions, image uploads, edit/regenerate, rename followed by reload, and removal of a disposable conversation. Check row hover and keyboard focus on desktop, and the sidebar/composer with the keyboard open on a phone. Also check failed uploads and offline/reconnect behavior. Live quotas and deployment configuration require real-service checks.
 

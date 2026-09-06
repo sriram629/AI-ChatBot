@@ -14,6 +14,7 @@ from .utils import handle_file_upload, image_part
 from .tools import search_web_consensus, generate_image_tool
 from .rag import add_to_vector_db, search_vector_db, has_session_documents
 from beanie.operators import Exists
+from pydantic import BaseModel, constr
 import logging
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ async def safe_send(websocket: WebSocket, data: dict):
 async def get_owned_session(session_id: str, user: User):
     session = await ChatSession.find_one(
         ChatSession.session_id == session_id, ChatSession.user_email == user.email)
-    if not session:
+    if not session or getattr(session, "is_deleted", False):
         raise HTTPException(404, "Session not found")
     return session
 
@@ -78,6 +79,7 @@ def provider_messages(prompt, history, context, persona):
 async def call_mistral(prompt, history, websocket, context):
     full = ""
     try:
+        await safe_send(websocket, {"type": "model", "content": "Mistral"})
         stream = await mistral_client.chat.stream_async(
             model="mistral-small-latest",
             messages=provider_messages(prompt, history, context, MISTRAL_PROMPT),
@@ -103,6 +105,7 @@ async def call_groq(prompt, history, websocket, context):
     try:
         if groq_client is None:
             raise ValueError("Groq is not configured")
+        await safe_send(websocket, {"type": "model", "content": "Groq"})
         stream = await groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=provider_messages(prompt, history, context, GROQ_PROMPT), stream=True)
@@ -132,6 +135,7 @@ async def call_gemini(prompt, history, websocket, context, attachments):
         if attachment.type == "image":
             parts.append(image_part(attachment.content))
     try:
+        await safe_send(websocket, {"type": "model", "content": "Gemini"})
         chat = gemini_model.start_chat(history=history)
         stream = await chat.send_message_async(parts, stream=True)
         async for chunk in stream:
@@ -214,30 +218,39 @@ async def process_message(websocket, session_id, user, payload):
     query = message[8:].strip() if message.lower().startswith("/search ") else message
     search = payload.get("web_search") is True or message.lower().startswith("/search ")
     if not search and not attachments and detect_intent(message) == "IMAGE":
+        await safe_send(websocket, {"type": "status", "content": "Creating your image…"})
         result = await generate_image_tool(message) or "Image generation failed. Please try again."
         await safe_send(websocket, {"type": "chunk", "content": result})
     else:
         context = "No external context available."
         try:
             if await asyncio.wait_for(has_session_documents(session_id), 5):
+                await safe_send(websocket, {"type": "status", "content": "Finding relevant passages in your documents…"})
                 context = await asyncio.wait_for(search_vector_db(session_id, query), 35) or "No matching document passages."
         except Exception:
             logger.exception("Document retrieval failed")
             context = "Document retrieval unavailable. Do not invent document contents."
         if search:
             try:
+                await safe_send(websocket, {"type": "status", "content": "Searching the web…"})
                 context += "\nSEARCH: " + str(await asyncio.wait_for(search_web_consensus(query), 15))
             except Exception:
                 logger.exception("Web search failed")
                 context += "\nSearch unavailable. Do not claim current web verification."
         history = await get_formatted_history(session_id, trigger.timestamp)
         result = await call_gemini(query, history, websocket, context, attachments)
+    session = await get_owned_session(session_id, user)
     reply = await ChatMessage(session_id=session_id, user_email=user.email,
                               role="assistant", content=result).insert()
     await safe_send(websocket, {"type": "id_update", "tempId": "ai-response", "realId": str(reply.id)})
     if session.title == "New Chat":
         session.title = (message.strip() or "Attachment conversation")[:60]
-    await session.save()
+        # Do not overwrite a concurrent rename or restore a removed conversation.
+        await ChatSession.find({"session_id": session_id, "user_email": user.email,
+                                "title": "New Chat", "is_deleted": {"$ne": True}}).update(
+            {"$set": {"title": session.title, "updated_at": datetime.utcnow()}})
+    else:
+        await session.set({"updated_at": datetime.utcnow()})
     await safe_send(websocket, {"type": "title_update", "id": session_id, "title": session.title})
     await safe_send(websocket, {"type": "end"})
 
@@ -310,7 +323,7 @@ async def create_session(user: User = Depends(get_current_user)):
 
 @router.get("/sessions")
 async def get_sessions(user: User = Depends(get_current_user)):
-    return await ChatSession.find(ChatSession.user_email == user.email).sort(-ChatSession.updated_at).to_list()
+    return await ChatSession.find(ChatSession.user_email == user.email, {"is_deleted": {"$ne": True}}).sort(-ChatSession.updated_at).to_list()
 
 @router.get("/sessions/{session_id}/messages")
 async def get_messages(session_id: str, user: User = Depends(get_current_user)):
@@ -319,6 +332,26 @@ async def get_messages(session_id: str, user: User = Depends(get_current_user)):
         ChatMessage.session_id == session_id,
         ChatMessage.user_email == user.email,
     ).sort(+ChatMessage.timestamp).to_list()
+
+
+class RenameSessionRequest(BaseModel):
+    title: constr(strip_whitespace=True, min_length=1, max_length=100)
+
+
+@router.patch("/sessions/{session_id}")
+async def rename_session(session_id: str, data: RenameSessionRequest, user: User = Depends(get_current_user)):
+    session = await get_owned_session(session_id, user)
+    session.title = data.title
+    await session.set({"title": data.title, "updated_at": datetime.utcnow()})
+    return {"session_id": session.session_id, "title": session.title}
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str, user: User = Depends(get_current_user)):
+    session = await get_owned_session(session_id, user)
+    # Soft deletion keeps this UI operation recoverable without a multi-collection transaction.
+    await session.set({"is_deleted": True})
+    return {"deleted": True}
+
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):

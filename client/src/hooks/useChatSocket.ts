@@ -22,15 +22,35 @@ export interface Message {
 export const useChatSocket = (chatId: string | undefined) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [status, setStatus] = useState<string | null>(null);
+  const [connection, setConnection] = useState("connecting");
+  const [error, setError] = useState<string | null>(null);
+  const [model, setModel] = useState<string | null>(null);
   const { token } = useAuth();
   const navigate = useNavigate();
   const socketRef = useRef<WebSocket | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const stopping = useRef(false);
+  const stopTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const clearStopping = useCallback(() => {
+    clearTimeout(stopTimer.current);
+    stopping.current = false;
+    setIsStopping(false);
+  }, []);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionKey, setConnectionKey] = useState(0);
   const pendingMessage = useRef<{ content: string; attachment: any; tempId: string } | null>(
     null
   );
+
+  useEffect(() => {
+    clearStopping();
+    setIsStreaming(!!pendingMessage.current);
+    setStatus(null);
+    setError(null);
+    setModel(null);
+    return () => { clearTimeout(stopTimer.current); };
+  }, [chatId, clearStopping]);
 
   useEffect(() => {
     if (!token || !chatId) {
@@ -39,10 +59,12 @@ export const useChatSocket = (chatId: string | undefined) => {
     }
     if (pendingMessage.current) return;
 
+    let active = true;
     setIsConnecting(true);
     api
       .get(`/api/chat/sessions/${chatId}/messages`)
       .then((res) => {
+        if (!active) return;
         const formatted = res.data.map((m: any) => ({
           id: m._id || m.id,
           role: m.role,
@@ -52,6 +74,7 @@ export const useChatSocket = (chatId: string | undefined) => {
         setMessages(formatted);
       })
       .catch((err) => {
+        if (!active) return;
         if (err.response?.status === 404) {
           toast.error("Conversation not found");
           navigate("/chat", { replace: true });
@@ -59,7 +82,8 @@ export const useChatSocket = (chatId: string | undefined) => {
           toast.error("Failed to load history");
         }
       })
-      .finally(() => setIsConnecting(false));
+      .finally(() => { if (active) setIsConnecting(false); });
+    return () => { active = false; };
   }, [chatId, token, navigate]);
 
   useEffect(() => {
@@ -67,11 +91,15 @@ export const useChatSocket = (chatId: string | undefined) => {
     if (socketRef.current) socketRef.current.close();
 
     const url = getSocketUrl(`/api/chat/ws/${chatId}?token=${token}`);
+    setConnection(navigator.onLine ? "connecting" : "offline");
     const ws = new WebSocket(url);
+    setModel(null);
 
     let disposed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     ws.onopen = () => {
+      if (disposed) return;
+      setConnection("connected");
       setIsConnecting(false);
       if (pendingMessage.current) {
         setIsStreaming(true);
@@ -89,14 +117,24 @@ export const useChatSocket = (chatId: string | undefined) => {
 
     ws.onmessage = (event) => {
       if (disposed) return;
-      const data = JSON.parse(event.data);
+      let data;
+      try { data = JSON.parse(event.data); } catch { clearStopping(); setStatus(null); setError("An unreadable response arrived. Please try again."); setIsStreaming(false); return; }
+      if (stopping.current && ['start', 'status', 'chunk', 'model'].includes(data.type)) return;
+      if (data.type === "model") {
+        if (["Gemini", "Groq", "Mistral"].includes(data.content)) setModel(data.content);
+        setStatus(null);
+        return;
+      }
       if (data.type === "error") {
+        clearStopping();
         setIsStreaming(false);
         setStatus(null);
-        toast.error(data.content || "Chat failed");
+        setError(data.content || "Chat failed. Please try again.");
         return;
       }
       if (data.type === "start") {
+        setError(null);
+        setModel(null);
         setIsStreaming(true);
         setStatus(null);
         setMessages((prev) => [
@@ -115,6 +153,7 @@ export const useChatSocket = (chatId: string | undefined) => {
           return newArr;
         });
       } else if (data.type === "end") {
+        clearStopping();
         setIsStreaming(false);
         setStatus(null);
       } else if (data.type === "id_update") {
@@ -130,26 +169,36 @@ export const useChatSocket = (chatId: string | undefined) => {
 
     ws.onclose = (event) => {
       if (disposed) return;
+      clearStopping();
       setIsStreaming(false);
       setStatus(null);
+      setConnection(navigator.onLine ? "reconnecting" : "offline");
       if (event.code !== 1008) {
         reconnectTimer = setTimeout(() => setConnectionKey((key) => key + 1), 3000);
       } else {
-        toast.error("Session access denied. Please sign in again.");
+        setConnection("closed");
+        setError("Session access denied. Please sign in again.");
       }
     };
 
+    const offline = () => setConnection("offline");
+    const online = () => { if (ws.readyState !== WebSocket.OPEN) setConnectionKey(key => key + 1); else setConnection("connected"); };
+    window.addEventListener("offline", offline);
+    window.addEventListener("online", online);
     socketRef.current = ws;
     return () => {
+      window.removeEventListener("offline", offline);
+      window.removeEventListener("online", online);
       disposed = true;
       clearTimeout(reconnectTimer);
       ws.close();
     };
-  }, [token, chatId, connectionKey]);
+  }, [token, chatId, connectionKey, clearStopping]);
 
   const sendMessage = useCallback(
     async (content: string, attachment: any = null) => {
       if ((!content.trim() && !attachment) || isStreaming || pendingMessage.current) return;
+      setError(null);
       const tempId = Date.now().toString();
 
       setMessages((prev) => [
@@ -227,13 +276,27 @@ export const useChatSocket = (chatId: string | undefined) => {
   }, [isStreaming]);
 
   const stopGeneration = useCallback(() => {
+    if (stopping.current) return;
+    const wasPending = !!pendingMessage.current;
     pendingMessage.current = null;
-    setIsStreaming(false);
-    setStatus(null);
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
+    if (!wasPending && socketRef.current?.readyState === WebSocket.OPEN) {
+      stopping.current = true;
+      setIsStopping(true);
+      setStatus("Stopping…");
       socketRef.current.send(JSON.stringify({ type: "stop" }));
+      stopTimer.current = setTimeout(() => {
+        socketRef.current?.close();
+        clearStopping();
+        setIsStreaming(false);
+        setStatus(null);
+        setError("Stopping took too long. Reconnecting to your conversation.");
+      }, 10000);
+    } else {
+      clearStopping();
+      setIsStreaming(false);
+      setStatus(null);
     }
-  }, []);
+  }, [clearStopping]);
 
   return {
     messages,
@@ -242,7 +305,12 @@ export const useChatSocket = (chatId: string | undefined) => {
     regenerateResponse,
     stopGeneration,
     isStreaming,
+    isStopping,
     isConnecting,
     status,
+    model,
+    connection,
+    error,
+    dismissError: () => setError(null),
   };
 };

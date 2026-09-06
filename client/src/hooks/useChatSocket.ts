@@ -29,11 +29,28 @@ export const useChatSocket = (chatId: string | undefined) => {
   const navigate = useNavigate();
   const socketRef = useRef<WebSocket | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const stopping = useRef(false);
+  const stopTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const clearStopping = useCallback(() => {
+    clearTimeout(stopTimer.current);
+    stopping.current = false;
+    setIsStopping(false);
+  }, []);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionKey, setConnectionKey] = useState(0);
   const pendingMessage = useRef<{ content: string; attachment: any; tempId: string } | null>(
     null
   );
+
+  useEffect(() => {
+    clearStopping();
+    setIsStreaming(!!pendingMessage.current);
+    setStatus(null);
+    setError(null);
+    setModel(null);
+    return () => { clearTimeout(stopTimer.current); };
+  }, [chatId, clearStopping]);
 
   useEffect(() => {
     if (!token || !chatId) {
@@ -101,13 +118,15 @@ export const useChatSocket = (chatId: string | undefined) => {
     ws.onmessage = (event) => {
       if (disposed) return;
       let data;
-      try { data = JSON.parse(event.data); } catch { setError("An unreadable response arrived. Please try again."); setIsStreaming(false); return; }
+      try { data = JSON.parse(event.data); } catch { clearStopping(); setStatus(null); setError("An unreadable response arrived. Please try again."); setIsStreaming(false); return; }
+      if (stopping.current && ['start', 'status', 'chunk', 'model'].includes(data.type)) return;
       if (data.type === "model") {
         if (["Gemini", "Groq", "Mistral"].includes(data.content)) setModel(data.content);
         setStatus(null);
         return;
       }
       if (data.type === "error") {
+        clearStopping();
         setIsStreaming(false);
         setStatus(null);
         setError(data.content || "Chat failed. Please try again.");
@@ -133,6 +152,7 @@ export const useChatSocket = (chatId: string | undefined) => {
           return newArr;
         });
       } else if (data.type === "end") {
+        clearStopping();
         setIsStreaming(false);
         setStatus(null);
       } else if (data.type === "id_update") {
@@ -148,6 +168,7 @@ export const useChatSocket = (chatId: string | undefined) => {
 
     ws.onclose = (event) => {
       if (disposed) return;
+      clearStopping();
       setIsStreaming(false);
       setStatus(null);
       setConnection(navigator.onLine ? "reconnecting" : "offline");
@@ -254,13 +275,27 @@ export const useChatSocket = (chatId: string | undefined) => {
   }, [isStreaming]);
 
   const stopGeneration = useCallback(() => {
+    if (stopping.current) return;
+    const wasPending = !!pendingMessage.current;
     pendingMessage.current = null;
-    setIsStreaming(false);
-    setStatus(null);
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
+    if (!wasPending && socketRef.current?.readyState === WebSocket.OPEN) {
+      stopping.current = true;
+      setIsStopping(true);
+      setStatus("Stopping…");
       socketRef.current.send(JSON.stringify({ type: "stop" }));
+      stopTimer.current = setTimeout(() => {
+        socketRef.current?.close();
+        clearStopping();
+        setIsStreaming(false);
+        setStatus(null);
+        setError("Stopping took too long. Reconnecting to your conversation.");
+      }, 10000);
+    } else {
+      clearStopping();
+      setIsStreaming(false);
+      setStatus(null);
     }
-  }, []);
+  }, [clearStopping]);
 
   return {
     messages,
@@ -269,6 +304,7 @@ export const useChatSocket = (chatId: string | undefined) => {
     regenerateResponse,
     stopGeneration,
     isStreaming,
+    isStopping,
     isConnecting,
     status,
     model,

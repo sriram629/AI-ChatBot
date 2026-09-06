@@ -35,6 +35,7 @@ const Chat = () => {
     regenerateResponse,
     stopGeneration,
     isStreaming,
+    isStopping,
     isConnecting,
     status,
     model,
@@ -283,6 +284,7 @@ const Chat = () => {
                   <ChatInput
                     onSend={handleSendMessage}
                     isStreaming={isStreaming}
+                    isStopping={isStopping}
                     onStop={stopGeneration}
                     className="shadow-xl"
                   />

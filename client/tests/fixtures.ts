@@ -6,12 +6,13 @@ export type Harness = {
   sockets: WebSocketRoute[];
   emit: (value: Record<string, unknown>) => void;
   errors: string[];
+  autoStop: boolean;
 };
 export const test = base.extend<{ app: Harness }>({
   app: async ({ page }, use) => {
     const app: Harness = {
       requests: [], sockets: [], sessions: [{ session_id: "session-1", title: "Project notes", updated_at: "2026-09-06T12:00:00Z" }],
-      emit(value) { app.sockets.at(-1)?.send(JSON.stringify(value)); }, errors: [],
+      emit(value) { app.sockets.at(-1)?.send(JSON.stringify(value)); }, errors: [], autoStop: true,
     };
     page.on("pageerror", err => app.errors.push(err.message));
     await page.addInitScript(() => localStorage.setItem("token", "ui-test-token"));
@@ -34,7 +35,7 @@ export const test = base.extend<{ app: Harness }>({
       app.sockets.push(ws);
       ws.onMessage(raw => {
         const data = JSON.parse(String(raw)); app.requests.push(data);
-        if (data.type === "stop") { ws.send(JSON.stringify({ type: "end" })); return; }
+        if (data.type === "stop") { if (app.autoStop) ws.send(JSON.stringify({ type: "end" })); return; }
         ws.send(JSON.stringify({ type: "start" }));
       });
     });
@@ -46,4 +47,3 @@ export async function enterChat(page: Page) {
   await page.goto("/chat/session-1");
   await expect(page.getByRole("textbox").first()).toBeVisible();
 }
-

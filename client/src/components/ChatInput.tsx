@@ -10,13 +10,14 @@ interface ChatInputProps {
   onSend: (content: string, attachment: any) => void;
   onStop?: () => void;
   isStreaming?: boolean;
+  isStopping?: boolean;
   disabled?: boolean;
   className?: string;
   suggestion?: { text: string; id: number };
 }
 const extensions = /\.(pdf|txt|md|py|js|png|jpe?g|webp|gif)$/i;
 
-const ChatInput = ({ onSend, onStop, isStreaming, disabled, className, suggestion }: ChatInputProps) => {
+const ChatInput = ({ onSend, onStop, isStreaming, isStopping, disabled, className, suggestion }: ChatInputProps) => {
   const [content, setContent] = useState("");
   const [attachment, setAttachment] = useState<any>(null);
   const [upload, setUpload] = useState<{ name: string; percent: number } | null>(null);
@@ -118,7 +119,7 @@ const ChatInput = ({ onSend, onStop, isStreaming, disabled, className, suggestio
           <span id={hintId} className="text-xs text-muted-foreground">PDF, images & text · 2 MB max</span>
         </div>
         {isStreaming ? (
-          <Button aria-label="Stop generating" title="Stop generating" onClick={onStop} size="icon" className="shrink-0 rounded-full"><Square className="h-3 w-3 fill-current" /></Button>
+          <Button aria-label={isStopping ? "Stopping" : "Stop generating"} title={isStopping ? "Stopping…" : "Stop generating"} disabled={isStopping} onClick={onStop} size="icon" className="shrink-0 rounded-full">{isStopping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-3 w-3 fill-current" />}</Button>
         ) : (
           <Button aria-label="Send message" title="Send message" onClick={handleSend} size="icon"
             disabled={disabled || (!content.trim() && !attachment) || !!upload} className="shrink-0 rounded-full">

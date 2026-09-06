@@ -17,7 +17,10 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId, isMobile, onNavigate }: 
     if (!isMobile || !isOpen) return;
     const previous = document.activeElement as HTMLElement;
     panel.current?.querySelector<HTMLButtonElement>('button')?.focus();
-    return () => { requestAnimationFrame(() => { if (previous?.isConnected) previous.focus(); }); };
+    return () => { requestAnimationFrame(() => {
+      const trigger = document.getElementById('open-conversations');
+      if (trigger) trigger.focus(); else if (previous?.isConnected) previous.focus();
+    }); };
   }, [isMobile, isOpen]);
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[]>([]);

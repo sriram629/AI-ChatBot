@@ -124,7 +124,7 @@ const Chat = () => {
       <div ref={contentRef} className="flex flex-col flex-1 h-full min-w-0 bg-background relative transition-all duration-300 ease-in-out">
         <header className="flex items-center justify-between px-4 h-16 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-30 shrink-0">
           <div className="flex items-center gap-3">
-            {isMobile && <Button variant="ghost" size="icon" aria-label="Open sidebar" onClick={() => setSidebarOpen(true)}><PanelLeftOpen className="h-5 w-5" /></Button>}
+            {isMobile && <Button id="open-conversations" variant="ghost" size="icon" aria-label="Open sidebar" onClick={() => setSidebarOpen(true)}><PanelLeftOpen className="h-5 w-5" /></Button>}
             <h1 className="text-sm font-medium text-muted-foreground truncate max-w-[140px] sm:max-w-[300px]">
               {chatId ? "Conversation" : "New Chat"}
             </h1>

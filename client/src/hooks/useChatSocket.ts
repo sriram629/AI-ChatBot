@@ -134,6 +134,7 @@ export const useChatSocket = (chatId: string | undefined) => {
       }
       if (data.type === "start") {
         setError(null);
+        setModel(null);
         setIsStreaming(true);
         setStatus(null);
         setMessages((prev) => [

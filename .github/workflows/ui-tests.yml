@@ -25,9 +25,8 @@ jobs:
       - run: npm run build
       - run: npx playwright test
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: browser-test-results
           path: client/test-results
           retention-days: 7
-

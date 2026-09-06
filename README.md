@@ -1,296 +1,136 @@
-# ⚡ Multimodal AI Chatbot: Resilient AI Orchestration Platform
+# Multimodal AI Chatbot
 
-Multimodal AI Chatbot is a production-grade AI platform that orchestrates multiple LLM providers into a single, high-availability interface. By implementing a multi-tier failover architecture, it ensures 100% service availability even when primary APIs encounter rate limits or outages.
+A React and FastAPI chatbot with streamed answers, document questions, image inputs, web search, image generation, and saved conversations. Text responses try Gemini, then Groq and Mistral when a provider fails. Availability depends on provider access, quotas, connectivity, and database health.
 
----
+## Features
 
-## 🎯 The "Why"
-Traditional AI apps are fragile; they rely on a single API. **Multimodal AI Chatbot** solves this by implementing an intelligent orchestration layer that automatically routes between **Gemini, Groq, and Mistral**, while managing a crowdsourced **AI Horde** vision engine with automated fallbacks.
+- **Chat:** native WebSocket streaming, saved history, copy, edit, regenerate, and Stop. Editing replaces a question and removes subsequent messages; regenerating replaces the answer after the latest user question.
+- **Documents:** text-based PDFs and UTF-8 TXT, Markdown, Python, or JavaScript files. Extracted text is stored in MongoDB; keyword matching selects relevant excerpts within the same conversation. No vector index or embedding service is required.
+- **Images:** PNG, JPEG, WebP, and GIF inputs for Gemini, plus expandable image previews. Text-only fallback providers do not replace Gemini’s image understanding.
+- **Search:** prefix a message with `/search ` to combine Google results through Serper with DuckDuckGo results.
+- **Image generation:** keyword-based intent detection routes suitable requests to AI Horde. Queue polling can fail or time out; there is no Pollinations fallback.
+- **Accounts:** email/password registration, EmailJS OTP verification and password reset, JWT authentication, and optional Google/GitHub sign-in.
+- **Interface:** one composer outline, attachment previews/progress, processing and connection feedback, provider labels, editable starter prompts, Markdown tables, highlighted code, and math.
+- **Sidebar:** padded, shortened titles. Rename and Delete appear on the hovered row or keyboard focus on pointer devices; touch devices keep the controls available. Removal is a soft delete from history, not permanent erasure of messages or documents.
 
----
+Uploads are limited to **2 MB**, extracted text to **200,000 characters**, and chat messages to **20,000 characters**. Scanned PDFs need OCR before uploading; OCR is not implemented here. Large documents use selected excerpts, so answers may not cover every page.
 
-## 🛠 Tech Stack
-* **Frontend:** React 19, TypeScript, Vite, Tailwind CSS
-* **Backend:** FastAPI (Python 3.11), Uvicorn
-* **Real-Time:** WebSockets (Socket.io) for asynchronous task streaming
-* **AI Orchestration:** Gemini 2.0 Flash (with Function Calling), Groq (Llama 3.3), Mistral AI
-* **Database & RAG:** MongoDB Atlas (Vector Search), Beanie ODM
-* **Security:** Bcrypt Password Hashing, OAuth2.0 (Google/GitHub), SMTP OTP Verification, JWT
+## Stack and flow
 
----
+| Layer | Implementation |
+| --- | --- |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS |
+| Backend | Python 3.11, FastAPI, Uvicorn |
+| Streaming | Native WebSockets, not Socket.IO |
+| Storage | MongoDB, Motor, Beanie |
+| Text providers | Gemini → Groq → Mistral |
+| Parsing | PyPDF2 and UTF-8 decoding |
+| Search / images / email | Serper + DuckDuckGo / AI Horde / EmailJS |
 
-## 🔄 System Architecture & Flow
+The backend verifies ownership, saves the question, retrieves document excerpts, and performs search when explicitly requested. It then streams a provider response or generates an image. New titles come from the first message, not a separate title-generation model.
 
-The following flowchart represents how Multimodal AI Chatbot handles a user request from intent detection to final fulfillment:
+The checked-in IDs in `server/app/chat.py` are `gemini-3.5-flash-lite`, `llama-3.3-70b-versatile`, and `mistral-small-latest`. These describe the code, not guaranteed free-tier access or continued provider availability. Change them to IDs supported by your provider account when needed.
 
-```mermaid
-graph TD
-    A[User Message] --> B[WebSocket Session Creation]
-    B --> C{Intent Detection via Small LLM}
-    C -- "IMAGE" --> D[AI Horde Vision Engine]
-    D -- "Success < 2min" --> E[Display Image]
-    D -- "Timeout/Fail" --> F[Pollinations CDN Fallback]
-    F --> E
-    
-    C -- "COMPLEX" --> G[Hybrid RAG Pipeline]
-    G --> H[MongoDB Vector Search]
-    G --> I[Gemini Function Calling]
-    I -- "Web Search Needed" --> J[Parallel SerpAPI: Google + DuckDuckGo]
-    J --> K[Primary: Gemini 2.0]
-    H --> K
-    K -- "Error 429/500" --> L[Backup: Groq Llama 3.3]
-    L -- "Error" --> M[Safety: Mistral AI]
-    K --> N[Stream to Frontend]
-    L --> N
-    M --> N
-    
-    C -- "SIMPLE" --> O[Direct LLM Response]
-    O --> N
-    
-    B --> P[Parallel: Smart Title Generation]
-    P -- "Gemini → Groq → Mistral" --> Q[Update Chat History]
-```
+## Local setup
 
-## ✨ Key Features
+Use Python 3.11, Node.js 22, and a reachable MongoDB deployment. Keep secrets out of version control.
 
-### 🧠 AI Orchestration & Resilience
-* **Multi-LLM Failover System:** Architected a three-tier failover architecture (Gemini → Groq → Mistral) maintaining 100% service availability during API outages
-* **Intelligent Intent Detection:** Employs a high-speed small LLM model to classify user requests into `IMAGE`, `SIMPLE`, or `COMPLEX` categories in <200ms, ensuring low-latency routing
-* **Gemini Function Calling:** Leverages native function calling to dynamically decide between web search and image generation workflows
-
-### 🔍 Hybrid RAG Pipeline
-* **Contextual Search:** Combines MongoDB Vector Embeddings with real-time web data to provide context-aware responses from both uploaded documents and live information
-* **Parallel Web Search:** Integrates SerpAPI to fetch results simultaneously from Google and DuckDuckGo, merging consensus data for factually accurate responses
-* **Document Processing:** Supports multimodal inputs including PDFs and images with vector embedding storage for semantic search
-
-### 🎨 Resilient Vision Engine
-* **AI Horde Integration:** Custom-built crowdsourced image generation with dynamic polling based on queue position
-* **Circuit Breaker Pattern:** Implements a strict 120s timeout with automatic fallback to Pollinations CDN to prevent server hangs
-* **Smart Polling:** Adaptive polling intervals (30s for queue >50, 5s for queue <10) to stay within rate limits while maintaining responsiveness
-
-### 🔐 Identity Management System
-* **Secure Authentication:** Bcrypt password hashing with custom SMTP-based OTP verification workflow
-* **Social OAuth2.0:** Seamless integration with Google and GitHub login providers
-* **JWT Authorization:** Token-based session management with configurable expiration
-
-### ⚡ Asynchronous Architecture
-* **WebSocket Streaming:** Real-time response streaming with parallel task execution
-* **Concurrent Processing:** Simultaneous handling of intent detection, smart-title generation, and multimodal processing
-* **Session Management:** Automatic chat session creation and history tracking
-
-### 🖥️ Responsive Interface
-* **Modern UI:** Tailwind CSS-powered responsive design with sidebar, navbar, and main content areas
-* **Chat History Management:** Sidebar navigation for previous conversations and new chat creation
-* **User Profile:** Integrated profile management and signout functionality in navbar
-
----
-
-## 🧠 Technical Deep Dive: The Horde Bottleneck Challenge
-
-**The Challenge:** Integrating the **AI Horde** presented a significant reliability hurdle. Unlike centralized paid APIs, crowdsourced workers can drop jobs, queues often exceed 150+ positions, and aggressive polling quickly triggers `429 Too Many Requests` errors.
-
-**The Solution:** I engineered a **Dynamic Polling & Safety Lifecycle** to manage these variables:
-
-1.  **State-Based Polling:** Instead of fixed intervals, the system dynamically checks the `queue_position`. If the position is >50, it sleeps for 30s; if it drops below 10, it sleeps for 5s. This stays within rate limits while maintaining responsiveness as the job nears completion.
-2.  **Strict 120s Circuit Breaker:** I implemented a hard wall-clock timeout. If the Horde does not deliver within 2 minutes, the system intercepts the request and injects a high-speed **Pollinations CDN fallback**, ensuring the user receives a visual result without the server ever hanging.
-
----
-
-## 🚀 Step-by-Step Setup
-
-Follow these instructions to get a local copy up and running.
-
-### 1. Clone the Repository
-
-```bash
-git clone (project_Clone_url)
-```
-
-### 2. Backend Configuration (FastAPI)
-The backend manages AI orchestration, WebSocket connections, and the Vision Engine.
-
-```bash
-# Navigate to server directory
-cd server
-
-# Create and activate a virtual environment
+```sh
+git clone https://github.com/sriram629/Multimodal-AI-ChatBot.git
+cd Multimodal-AI-ChatBot/server
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# Install all required Python packages
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Frontend Configuration (React)
-The frontend provides the interactive chat interface with real-time WebSocket streaming.
+On Windows, activate with `venv\Scripts\activate`.
 
-```bash
-# Navigate to client directory
-cd ../client
+Create `server/.env`:
 
-# Install Node dependencies
-npm install
-```
-
-### 4. Environment Variables
-Create a `.env` file in the `/server` folder and populate it with your API keys:
-
-```bash
-# --- SERVER CONFIG ---
-PORT=8000
+```dotenv
+MONGO_URI=mongodb+srv://USER:PASSWORD@YOUR_CLUSTER.mongodb.net/?retryWrites=true&w=majority
+SECRET_KEY=REPLACE_WITH_A_LONG_RANDOM_SECRET
 FRONTEND_URL=http://localhost:5173
-ALLOWED_HOSTS=localhost,127.0.0.1,your-app.render.com
-
-# --- AI PROVIDERS (LLMs) ---
-# Gemini is primary, Groq is secondary, Mistral is fallback
-GOOGLE_API_KEY=your_gemini_api_key_here
-GROQ_API_KEY=your_groq_api_key_here
-MISTRAL_API_KEY=your_mistral_api_key_here
-
-# --- VISION ENGINE (AI HORDE) ---
-# Use '0000000000' for anonymous (slow) or register at stablehorde.net for a free key
-AI_HORDE_KEY=0000000000
-HF_TOKEN=your_huggingface_token_here
-
-# --- SEARCH & DATA ---
-# Get this from serper.dev (free tier available)
-SERPER_API_KEY=your_serper_api_key_here
-# MongoDB Atlas Connection String with Vector Search enabled
-MONGO_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/omnigen?retryWrites=true&w=majority
-
-# --- SECURITY ---
-# Generate a secret using: openssl rand -hex 32
-JWT_SECRET=your_super_secret_random_string
 ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
 
-# --- SMTP OTP VERIFICATION ---
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_EMAIL=your_email@gmail.com
-SMTP_PASSWORD=your_app_specific_password
+GOOGLE_API_KEY=YOUR_GEMINI_KEY
+GROQ_API_KEY=YOUR_GROQ_KEY
+MISTRAL_API_KEY=YOUR_MISTRAL_KEY
+SERPER_API_KEY=YOUR_SERPER_KEY
+
+EMAILJS_SERVICE_ID=YOUR_SERVICE_ID
+EMAILJS_TEMPLATE_ID=YOUR_TEMPLATE_ID
+EMAILJS_PUBLIC_KEY=YOUR_PUBLIC_KEY
+EMAILJS_PRIVATE_KEY=YOUR_PRIVATE_KEY
+
+GITHUB_CLIENT_ID=YOUR_GITHUB_OAUTH_CLIENT_ID
+GITHUB_CLIENT_SECRET=YOUR_GITHUB_OAUTH_CLIENT_SECRET
 ```
 
-Create a `.env` file in the `/client` folder:
-```bash
-VITE_GOOGLE_CLIENT_ID=your_google_client_ID
-VITE_GITHUB_CLIENT_ID=your_github_client_ID
-VITE_API_URL="http://127.0.0.1:8000"  # or your deployed backend URL
+`MONGO_URI` and a private `SECRET_KEY` are required at startup. Configure keys for the providers you use. EmailJS is required for OTP flows; its template receives `to_email` and `otp`. Serper is used for Google search. GitHub credentials enable GitHub sign-in.
+
+Generate a secret with `openssl rand -hex 32`. The server reads `SECRET_KEY`, not `JWT_SECRET`. Token lifetime is currently seven days in `server/app/auth.py`, not an environment setting.
+
+Accounts, sessions, and messages use `ai_chatbot_db`. Uploaded text uses the existing `ai_chat_db.vector_storage` collection. Give the database user access to both databases; the URI’s database path does not override these explicit names.
+
+AI Horde currently uses the anonymous key in `server/app/tools.py`; an `AI_HORDE_KEY` environment variable does not change it. Document retrieval does not require a Hugging Face key. The application does not read SMTP settings.
+
+Start the backend from `server`:
+
+```sh
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### 5. Running the Application
-Open two terminal windows to run both services simultaneously:
+In another terminal, enter the repository’s `client` directory and run `npm ci`. Create `client/.env`:
 
-**Terminal 1 (Backend):**
-```bash
-cd server
-uvicorn main:app --reload
+```dotenv
+VITE_API_URL=http://127.0.0.1:8000
+VITE_GOOGLE_CLIENT_ID=YOUR_GOOGLE_OAUTH_CLIENT_ID
+VITE_GITHUB_CLIENT_ID=YOUR_GITHUB_OAUTH_CLIENT_ID
 ```
 
-**Terminal 2 (Frontend):**
-```bash
-cd client
-npm run dev
+OAuth settings are needed for the corresponding sign-in buttons. Register the frontend’s `/login` URL with the provider, for example `http://localhost:5173/login`. The frontend and backend GitHub client IDs must match.
+
+Run `npm run dev` and open [localhost:5173](http://localhost:5173). Backend documentation is at [localhost:8000/docs](http://127.0.0.1:8000/docs).
+
+## Deployment
+
+- The backend Dockerfile runs on port `10000`. For a non-Docker service, run from `server` with `uvicorn main:app --host 0.0.0.0 --port $PORT`.
+- Set backend secrets in the hosting service. `FRONTEND_URL` accepts the exact frontend origin or comma-separated origins without extra spaces.
+- Build from `client` with `npm ci && npm run build` and publish `dist`. Set `VITE_API_URL` to the HTTPS backend origin **before building**.
+- Configure static hosting to serve `index.html` for client routes such as `/chat/...` and `/login`.
+- Deploy both services for conversation controls and status/provider feedback. Configure MongoDB network access for the backend host.
+
+`GET /health` checks database connectivity and returns HTTP 503 when unavailable. The database-health GitHub workflow attempts a daily request to the configured Render backend and supports manual runs. This does not guarantee continuous hosting or prevent every database pause; hosting policies and connectivity still apply.
+
+## Validation
+
+Run `npm run build` from `client`. The Node.js CI workflow checks the frontend build on pushes.
+
+The browser suite and session-control tests introduced on the UI branch have been removed from the final tree, along with the Playwright test workflow. The pre-existing backend reliability suite remains; run it from the repository root with the server environment active using `python -m unittest discover -s server/tests`.
+
+Before deployment, check sending and stopping, PDF questions, image uploads, edit/regenerate, rename followed by reload, and removal of a disposable conversation. Check row hover and keyboard focus on desktop, and the sidebar/composer with the keyboard open on a phone. Also check failed uploads and offline/reconnect behavior. Live quotas and deployment configuration require real-service checks.
+
+## Project layout
+
+```text
+client/src/
+  components/       Chat input, messages, sidebar, shared UI
+  contexts/         Authentication state
+  hooks/            WebSocket and other hooks
+  pages/            Landing, authentication, chat pages
+  lib/              API client and utilities
+server/
+  main.py           Startup, middleware, health route
+  app/auth.py       Accounts, OTP, JWT, OAuth
+  app/chat.py       Sessions, streaming, provider calls
+  app/database.py   Database initialization and health
+  app/models.py     Beanie document models
+  app/rag.py        Document storage and excerpt selection
+  app/tools.py      Search and image generation
+  app/utils.py      Upload parsing and validation
+  app/email_service.py  EmailJS integration
+.github/workflows/  Frontend build and database health checks
 ```
 
-The application will be available at `http://localhost:5173`
-
----
-
-## 📊 Performance Benchmarks
-| Intent Type | Model Used | Avg. Latency | Fallback Logic |
-| :--- | :--- | :--- | :--- |
-| **Simple** | Small LLM (Intent) | ~150ms | Direct Response |
-| **Complex** | Gemini 2.0 Flash | ~800ms | Groq (Llama 3.3) → Mistral |
-| **Image** | AI Horde | 30s - 120s | Pollinations CDN |
-| **Web Search** | SerpAPI (Parallel) | ~500ms | N/A |
-| **Title Gen** | Gemini → Groq → Mistral | ~300ms | Multi-tier Fallback |
-
----
-
-## 🛡️ Multi-Tier Failover Strategy
-This project implements a resilient orchestration system to ensure 100% service availability:
-
-1. **Tier 1 (Primary):** Google Gemini 2.0 Flash (High reasoning, multimodal, function calling)
-2. **Tier 2 (Latency Fallback):** Groq Llama 3.3 (Triggered if Gemini returns 429/500 errors)
-3. **Tier 3 (Safety Fallback):** Mistral AI (Final fallback if all primary providers fail)
-
-This architecture applies to both **chat responses** and **smart title generation**, ensuring continuous operation even during provider outages.
-
----
-
-## 🔄 Request Lifecycle
-1. User sends message → WebSocket session created
-2. Session initialization → Chat history retrieved
-3. **Parallel Execution:**
-   - Intent detection (small LLM)
-   - Smart title generation (Gemini → Groq → Mistral)
-   - RAG vector search in MongoDB
-4. Based on intent:
-   - **Image:** AI Horde (with fallback)
-   - **Complex:** Gemini Function Calling → Web search if needed → LLM response with failover
-   - **Simple:** Direct LLM response
-5. Stream response to frontend via WebSocket
-
----
-
-[![Live Demo](https://img.shields.io/badge/demo-online-brightgreen.svg?style=for-the-badge&logo=render)](https://ai-chatbot-frontend-yq89.onrender.com)
-
----
-
-## 🖼️ Full Gallery
-
-<details>
-<summary>Click to view all screenshots</summary>
-  
-### Website Page
-![Website](./screenshots/Website_page.png)
-
-### Authentication Flow
-![Login](./screenshots/login_page.png)
-![Register](./screenshots/Register_page.png)
-
-### App Flow
-![Home](./screenshots/Home_page.png)
-![Chat](./screenshots/Chat_page.png)
-
-</details>
-
----
-
-## 🏗️ Project Structure
-```
-multimodal-ai-chatbot/
-├── client/                 # React + TypeScript + Vite frontend
-│   ├── src/
-│   │   ├── components/    # UI components (Sidebar, Navbar, Chat)
-│   │   ├── contexts/      # WebSocket and Auth contexts
-│   │   └── pages/         # Authentication and Chat pages
-│   └── .env
-├── server/                # FastAPI backend
-│   ├── routes/            # API endpoints
-│   ├── services/          # AI orchestration logic
-│   ├── models/            # MongoDB models
-│   └── .env
-└── README.md
-```
-
----
-
-## 🤝 Contributing
-Contributions are welcome! Please feel free to submit a Pull Request.
-
----
-
-## 📝 License
-This project is open source and available under the MIT License.
-
----
-
-## 🔗 Links
-- **Live Demo:** [ai-chatbot-frontend-yq89.onrender.com](https://ai-chatbot-frontend-yq89.onrender.com)
-- **Report Issues:** [GitHub Issues](#)
-
----
-
-**Built with ❤️ using React, TypeScript, FastAPI, and MongoDB**
+Report problems through [GitHub Issues](https://github.com/sriram629/Multimodal-AI-ChatBot/issues). Include the failing action and redacted logs; omit keys, passwords, and authentication tokens.

@@ -74,7 +74,7 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId, isMobile, onNavigate }: 
                 <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
                 {isOpen && <span className="min-w-0 flex-1"><span className="block truncate text-sm">{session.title.length > 24 ? session.title.slice(0, 24).trimEnd() + "…" : session.title || "New chat"}</span><span className="mt-0.5 block text-xs text-muted-foreground">{new Date(session.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></span>}
               </button>
-              {isOpen && <div className="flex shrink-0 items-center">
+              {isOpen && <div className="conversation-actions flex shrink-0 items-center transition-opacity">
                 <Button variant="ghost" size="icon" title="Rename conversation" aria-label={"Rename " + session.title} onClick={() => setRenaming(session)} className="h-10 w-9 shrink-0"><Pencil className="h-4 w-4 text-muted-foreground" /></Button>
                 <Button variant="ghost" size="icon" title="Delete conversation" aria-label={"Delete " + session.title} onClick={() => setDeleting(session)} className="h-10 w-9 shrink-0"><Trash2 className="h-4 w-4 text-muted-foreground" /></Button>
               </div>}

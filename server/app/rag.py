@@ -21,7 +21,6 @@ async def add_to_vector_db(content: str, filename: str, session_id: str):
     digest = hashlib.sha256(
         (session_id + "\0" + filename + "\0" + content).encode("utf-8")
     ).hexdigest()
-    # One atomic, idempotent write. Embedding failures cannot lose PDF text.
     await vector_collection.update_one(
         {"_id": "document:" + digest},
         {"$set": {"session_id": session_id, "filename": filename, "content": content,
@@ -69,7 +68,6 @@ def select_context(documents, query: str, limit: int = MAX_CONTEXT):
 
 
 async def search_vector_db(session_id: str, query: str, top_k: int = 5):
-    # Ordinary MongoDB reads work without an Atlas vector index or an HF API key.
     documents = []
     async for document in vector_collection.find(
         {"session_id": session_id}, {"content": 1, "filename": 1}

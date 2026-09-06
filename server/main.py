@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import os
 import shutil
+import asyncio
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -14,7 +15,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 load_dotenv()
 
-from app.database import init_db
+from app.database import init_db, ping_db, close_db
 from app import auth, chat
 
 limiter = Limiter(key_func=get_remote_address)
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     print("Database initialized.")
     yield
+    close_db()
     if os.path.exists("temp_uploads"):
         shutil.rmtree("temp_uploads")
         print("Temporary uploads directory cleaned up.")
@@ -69,7 +71,11 @@ async def home(request: Request):
 
 @app.get("/health", include_in_schema=False)
 async def health_check():
-    return {"status": "healthy", "timestamp": os.times()[4]}
+    try:
+        await asyncio.wait_for(ping_db(), timeout=5)
+    except Exception:
+        raise HTTPException(503, "Database unavailable")
+    return {"status": "healthy", "database": "reachable"}
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():

@@ -9,6 +9,8 @@ client = AsyncIOMotorClient(MONGO_URL)
 db = client.ai_chat_db
 vector_collection = db.vector_storage
 
+embedding_slots = asyncio.Semaphore(2)
+
 HF_TOKEN = os.getenv("HF_API_KEY")
 # Added explicit task routing to the URL to force Feature Extraction
 EMBEDDING_MODEL_URL = "https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2/pipeline/feature-extraction"
@@ -48,10 +50,13 @@ async def get_embedding(text: str):
 async def add_to_vector_db(content: str, filename: str, session_id: str):
     chunks = [content[i:i+1000] for i in range(0, len(content), 800)]
     tasks = [process_and_save_chunk(chunk, filename, session_id, i) for i, chunk in enumerate(chunks)]
-    await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks)
+    if not all(results):
+        raise RuntimeError("Document indexing failed. Please retry the upload.")
 
 async def process_and_save_chunk(chunk: str, filename: str, session_id: str, index: int):
-    embedding = await get_embedding(chunk)
+    async with embedding_slots:
+        embedding = await get_embedding(chunk)
     if embedding:
         doc = {
             "session_id": session_id,
@@ -61,8 +66,9 @@ async def process_and_save_chunk(chunk: str, filename: str, session_id: str, ind
             "embedding": embedding
         }
         await vector_collection.insert_one(doc)
+        return True
     else:
-        print(f"[SKIP] Embedding failed for chunk {index}")
+        return False
 
 async def search_vector_db(session_id: str, query: str, top_k: int = 5):
     query_embedding = await get_embedding(query)
@@ -102,4 +108,3 @@ async def has_session_documents(session_id: str) -> bool:
     return await vector_collection.find_one(
         {"session_id": session_id}, {"_id": 1}
     ) is not None
-

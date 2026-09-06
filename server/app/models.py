@@ -46,6 +46,8 @@ class User(Document):
     is_active: bool = True
     is_verified: bool = False
     otp_code: Optional[str] = None
+    otp_purpose: Optional[str] = None
+    otp_attempts: int = 0
     otp_expires_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

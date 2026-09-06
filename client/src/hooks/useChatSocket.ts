@@ -192,7 +192,7 @@ export const useChatSocket = (chatId: string | undefined) => {
       clearTimeout(reconnectTimer);
       ws.close();
     };
-  }, [token, chatId, connectionKey]);
+  }, [token, chatId, connectionKey, clearStopping]);
 
   const sendMessage = useCallback(
     async (content: string, attachment: any = null) => {

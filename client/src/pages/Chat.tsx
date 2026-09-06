@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowDown, LogOut } from "lucide-react";
+import { ArrowDown, LogOut, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import ChatSidebar from "@/components/ChatSidebar";
 import ChatMessage from "@/components/ChatMessage";
@@ -147,6 +147,12 @@ const Chat = () => {
         </header>
 
         <main className="flex-1 relative flex flex-col min-h-0">
+          {status && (
+            <div role="status" aria-live="polite" className="flex shrink-0 items-center justify-center gap-2 border-b border-border/50 bg-primary/5 px-4 py-2 text-sm text-muted-foreground">
+              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin text-primary" />
+              {status}
+            </div>
+          )}
           {isConnecting && chatId ? (
             <div className="flex-1 max-w-3xl mx-auto w-full p-4 sm:p-6 space-y-12 mt-4">
               <div className="flex flex-col items-end gap-2">

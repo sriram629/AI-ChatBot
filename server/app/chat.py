@@ -214,18 +214,21 @@ async def process_message(websocket, session_id, user, payload):
     query = message[8:].strip() if message.lower().startswith("/search ") else message
     search = payload.get("web_search") is True or message.lower().startswith("/search ")
     if not search and not attachments and detect_intent(message) == "IMAGE":
+        await safe_send(websocket, {"type": "status", "content": "Creating your image…"})
         result = await generate_image_tool(message) or "Image generation failed. Please try again."
         await safe_send(websocket, {"type": "chunk", "content": result})
     else:
         context = "No external context available."
         try:
             if await asyncio.wait_for(has_session_documents(session_id), 5):
+                await safe_send(websocket, {"type": "status", "content": "Finding relevant passages in your documents…"})
                 context = await asyncio.wait_for(search_vector_db(session_id, query), 35) or "No matching document passages."
         except Exception:
             logger.exception("Document retrieval failed")
             context = "Document retrieval unavailable. Do not invent document contents."
         if search:
             try:
+                await safe_send(websocket, {"type": "status", "content": "Searching the web…"})
                 context += "\nSEARCH: " + str(await asyncio.wait_for(search_web_consensus(query), 15))
             except Exception:
                 logger.exception("Web search failed")

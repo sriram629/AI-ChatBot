@@ -22,6 +22,8 @@ export interface Message {
 export const useChatSocket = (chatId: string | undefined) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [status, setStatus] = useState<string | null>(null);
+  const [connection, setConnection] = useState("connecting");
+  const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState<string | null>(null);
   const { token } = useAuth();
   const navigate = useNavigate();
@@ -40,10 +42,12 @@ export const useChatSocket = (chatId: string | undefined) => {
     }
     if (pendingMessage.current) return;
 
+    let active = true;
     setIsConnecting(true);
     api
       .get(`/api/chat/sessions/${chatId}/messages`)
       .then((res) => {
+        if (!active) return;
         const formatted = res.data.map((m: any) => ({
           id: m._id || m.id,
           role: m.role,
@@ -53,6 +57,7 @@ export const useChatSocket = (chatId: string | undefined) => {
         setMessages(formatted);
       })
       .catch((err) => {
+        if (!active) return;
         if (err.response?.status === 404) {
           toast.error("Conversation not found");
           navigate("/chat", { replace: true });
@@ -60,7 +65,8 @@ export const useChatSocket = (chatId: string | undefined) => {
           toast.error("Failed to load history");
         }
       })
-      .finally(() => setIsConnecting(false));
+      .finally(() => { if (active) setIsConnecting(false); });
+    return () => { active = false; };
   }, [chatId, token, navigate]);
 
   useEffect(() => {
@@ -68,12 +74,15 @@ export const useChatSocket = (chatId: string | undefined) => {
     if (socketRef.current) socketRef.current.close();
 
     const url = getSocketUrl(`/api/chat/ws/${chatId}?token=${token}`);
+    setConnection(navigator.onLine ? "connecting" : "offline");
     const ws = new WebSocket(url);
     setModel(null);
 
     let disposed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     ws.onopen = () => {
+      if (disposed) return;
+      setConnection("connected");
       setIsConnecting(false);
       if (pendingMessage.current) {
         setIsStreaming(true);
@@ -91,7 +100,8 @@ export const useChatSocket = (chatId: string | undefined) => {
 
     ws.onmessage = (event) => {
       if (disposed) return;
-      const data = JSON.parse(event.data);
+      let data;
+      try { data = JSON.parse(event.data); } catch { setError("An unreadable response arrived. Please try again."); setIsStreaming(false); return; }
       if (data.type === "model") {
         if (["Gemini", "Groq", "Mistral"].includes(data.content)) setModel(data.content);
         setStatus(null);
@@ -100,10 +110,11 @@ export const useChatSocket = (chatId: string | undefined) => {
       if (data.type === "error") {
         setIsStreaming(false);
         setStatus(null);
-        toast.error(data.content || "Chat failed");
+        setError(data.content || "Chat failed. Please try again.");
         return;
       }
       if (data.type === "start") {
+        setError(null);
         setIsStreaming(true);
         setStatus(null);
         setMessages((prev) => [
@@ -139,15 +150,23 @@ export const useChatSocket = (chatId: string | undefined) => {
       if (disposed) return;
       setIsStreaming(false);
       setStatus(null);
+      setConnection(navigator.onLine ? "reconnecting" : "offline");
       if (event.code !== 1008) {
         reconnectTimer = setTimeout(() => setConnectionKey((key) => key + 1), 3000);
       } else {
-        toast.error("Session access denied. Please sign in again.");
+        setConnection("closed");
+        setError("Session access denied. Please sign in again.");
       }
     };
 
+    const offline = () => setConnection("offline");
+    const online = () => { if (ws.readyState !== WebSocket.OPEN) setConnectionKey(key => key + 1); else setConnection("connected"); };
+    window.addEventListener("offline", offline);
+    window.addEventListener("online", online);
     socketRef.current = ws;
     return () => {
+      window.removeEventListener("offline", offline);
+      window.removeEventListener("online", online);
       disposed = true;
       clearTimeout(reconnectTimer);
       ws.close();
@@ -157,6 +176,7 @@ export const useChatSocket = (chatId: string | undefined) => {
   const sendMessage = useCallback(
     async (content: string, attachment: any = null) => {
       if ((!content.trim() && !attachment) || isStreaming || pendingMessage.current) return;
+      setError(null);
       const tempId = Date.now().toString();
 
       setMessages((prev) => [
@@ -252,5 +272,8 @@ export const useChatSocket = (chatId: string | undefined) => {
     isConnecting,
     status,
     model,
+    connection,
+    error,
+    dismissError: () => setError(null),
   };
 };

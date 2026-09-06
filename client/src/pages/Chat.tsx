@@ -31,6 +31,9 @@ const Chat = () => {
     isConnecting,
     status,
     model,
+    connection,
+    error,
+    dismissError,
   } = useChatSocket(chatId);
 
   const [autoScroll, setAutoScroll] = useState(true);
@@ -149,6 +152,13 @@ const Chat = () => {
         </header>
 
         <main className="flex-1 relative flex flex-col min-h-0">
+          {chatId && connection !== "connected" && (
+            <div role="status" className="shrink-0 border-b border-border bg-amber-500/10 px-4 py-2 text-center text-sm text-amber-300">
+              {connection === "offline" ? "You’re offline. Your conversation stays here." : connection === "closed" ? "Sign in again to reconnect." : "Connecting to your conversation…"}
+              {connection === "closed" && <a href="/login" className="ml-2 underline">Sign in</a>}
+            </div>
+          )}
+          {error && <div role="alert" className="flex shrink-0 items-center justify-between gap-3 border-b border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300"><span>{error}</span><button onClick={dismissError} aria-label="Dismiss chat error" className="shrink-0 underline">Dismiss</button></div>}
           {status && (
             <div role="status" aria-live="polite" className="flex shrink-0 items-center justify-center gap-2 border-b border-border/50 bg-primary/5 px-4 py-2 text-sm text-muted-foreground">
               <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin text-primary" />

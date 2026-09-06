@@ -49,6 +49,15 @@ async def safe_send(websocket: WebSocket, data: dict):
     except:
         pass
 
+async def get_owned_session(session_id: str, user: User):
+    session = await ChatSession.find_one(
+        ChatSession.session_id == session_id,
+        ChatSession.user_email == user.email,
+    )
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
 async def detect_intent(user_msg: str) -> str:
     try:
         check_prompt = (
@@ -83,8 +92,11 @@ async def call_mistral(prompt, history, websocket, context):
                 full_resp += content
                 await safe_send(websocket, {"type": "chunk", "content": content})
         return full_resp
-    except:
-        return "All AI systems are currently at capacity."
+    except Exception:
+        logger.exception("Mistral request failed")
+        message = "The AI services are temporarily unavailable. Please try again."
+        await safe_send(websocket, {"type": "chunk", "content": message})
+        return message
 
 async def call_groq(prompt, history, websocket, context):
     try:
@@ -171,11 +183,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str):
                 await safe_send(websocket, {"type": "chunk", "content": img_md})
                 await safe_send(websocket, {"type": "end"})
             else:
-                rag_task = asyncio.create_task(search_vector_db(session_id, user_msg))
-                web_task = asyncio.create_task(search_web_consensus(user_msg))
-                rag_ctx = await rag_task or "None"
-                web_ctx = await web_task or "None"
-                context = f"RAG: {rag_ctx}\nSEARCH: {web_ctx}"
+                context = "No external context available."
+                if attachment and attachment.get("type") == "text":
+                    rag_ctx = await search_vector_db(session_id, user_msg)
+                    context = f"RAG: {rag_ctx or 'No relevant local documents found.'}"
                 history = await get_formatted_history(session_id)
                 
                 if intent == "COMPLEX":
@@ -233,7 +244,11 @@ async def get_sessions(user: User = Depends(get_current_user)):
 
 @router.get("/sessions/{session_id}/messages")
 async def get_messages(session_id: str, user: User = Depends(get_current_user)):
-    return await ChatMessage.find(ChatMessage.session_id == session_id).sort(+ChatMessage.timestamp).to_list()
+    await get_owned_session(session_id, user)
+    return await ChatMessage.find(
+        ChatMessage.session_id == session_id,
+        ChatMessage.user_email == user.email,
+    ).sort(+ChatMessage.timestamp).to_list()
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):

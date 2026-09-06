@@ -1,0 +1,27 @@
+name: Database health check
+on:
+  schedule:
+    - cron: '23 12 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Wake service and confirm database connectivity
+        env:
+          HEALTH_URL: https://ai-chatbot-46u2.onrender.com/health
+        run: |
+          for attempt in 1 2 3; do
+            if curl --fail --silent --show-error --max-time 90 "$HEALTH_URL" -o /tmp/chatbot-health.json; then
+              if python3 -c 'import json; d=json.load(open("/tmp/chatbot-health.json")); assert d.get("database") == "reachable"'; then
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          echo "Database health check failed or the updated backend is not deployed."
+          exit 1
+

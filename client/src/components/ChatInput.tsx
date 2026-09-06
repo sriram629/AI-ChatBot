@@ -48,6 +48,7 @@ const ChatInput = ({
       const res = await api.post("/api/chat/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
+      if (res.data.error) throw new Error(res.data.error);
       setAttachment(res.data);
       toast.success("File attached");
     } catch (err) {
@@ -60,7 +61,7 @@ const ChatInput = ({
   };
 
   const handleSend = () => {
-    if ((content.trim() || attachment) && !disabled) {
+    if ((content.trim() || attachment) && !disabled && !isStreaming && !isUploading) {
       onSend(content, attachment);
       setContent("");
       setAttachment(null);

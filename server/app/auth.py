@@ -1,16 +1,18 @@
 from datetime import datetime, timedelta
-import random
+import secrets
 import os
 import httpx
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 from jose import jwt, JWTError
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from .models import User
 from .email_service import send_otp_email
 
-SECRET_KEY = os.getenv("SECRET_KEY", "fallback_secret")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY or SECRET_KEY == "fallback_secret":
+    raise RuntimeError("Set a private SECRET_KEY before starting the server")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -26,7 +28,7 @@ class UserRegister(BaseModel):
 
 class VerifyOTP(BaseModel):
     email: EmailStr
-    otp: str
+    otp: str = Field(pattern=r"^[0-9]{6}$")
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -38,11 +40,11 @@ class OAuthLoginRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     email: EmailStr
-    new_password: str
+    new_password: str | None = None
 
 class ResetPasswordConfirm(BaseModel):
     email: EmailStr
-    otp: str
+    otp: str = Field(pattern=r"^[0-9]{6}$")
     new_password: str
 
 class Resend_OTP(BaseModel):
@@ -53,6 +55,8 @@ def get_password_hash(password):
     return pwd_context.hash(password)
 
 def verify_password(plain, hashed):
+    if not hashed or hashed == "oauth":
+        return False
     return pwd_context.verify(plain, hashed)
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
@@ -64,7 +68,7 @@ def create_access_token(data: dict):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 def generate_otp():
-    return str(random.randint(100000, 999999))
+    return str(secrets.randbelow(900000) + 100000)
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
@@ -91,6 +95,15 @@ async def get_ws_user(token: str):
     if user and not user.is_verified: return None
     return user
 
+async def validate_otp(user, otp: str, purpose: str):
+    if (not user or not user.otp_code or user.otp_purpose != purpose
+            or not user.otp_expires_at or user.otp_expires_at <= datetime.utcnow()
+            or user.otp_attempts >= 5):
+        raise HTTPException(400, "Invalid or expired OTP. Request a new code.")
+    if not secrets.compare_digest(user.otp_code, otp):
+        await user.inc({User.otp_attempts: 1})
+        raise HTTPException(400, "Invalid OTP")
+
 # --- AUTHENTICATION ENDPOINTS ---
 
 @router.post("/register", tags=["Authentication"])
@@ -106,6 +119,7 @@ async def register(user_data: UserRegister):
         last_name=user_data.last_name,
         is_verified=False,
         otp_code=otp,
+        otp_purpose="verification",
         otp_expires_at=datetime.utcnow() + timedelta(minutes=10)
     )
     await new_user.insert()
@@ -125,10 +139,12 @@ async def verify_email(data: VerifyOTP):
     user = await User.find_one(User.email == data.email)
     if not user: raise HTTPException(400, "User not found")
     
-    if user.otp_code != data.otp: raise HTTPException(400, "Invalid OTP")
+    await validate_otp(user, data.otp, "verification")
     
     user.is_verified = True
     user.otp_code = None
+    user.otp_purpose = None
+    user.otp_expires_at = None
     await user.save()
     
     token = create_access_token({"sub": user.email})
@@ -157,6 +173,8 @@ async def resend_otp(data: Resend_OTP):
         return {"message": "Email already verified"}
     new_otp = generate_otp()
     user.otp_code = new_otp
+    user.otp_purpose = "verification"
+    user.otp_attempts = 0
     user.otp_expires_at = datetime.utcnow() + timedelta(minutes=10)
     await user.save()
     
@@ -174,6 +192,8 @@ async def forgot_password(data: ResetPasswordRequest):
     if user:
         otp = generate_otp()
         user.otp_code = otp
+        user.otp_purpose = "password_reset"
+        user.otp_attempts = 0
         user.otp_expires_at = datetime.utcnow() + timedelta(minutes=10)
         await user.save()
         try:
@@ -185,11 +205,12 @@ async def forgot_password(data: ResetPasswordRequest):
 @router.post("/reset-password-confirm", tags=["Authentication"])
 async def reset_password_confirm(data: ResetPasswordConfirm):
     user = await User.find_one(User.email == data.email)
-    if not user or user.otp_code != data.otp:
-        raise HTTPException(400, "Invalid OTP")
+    await validate_otp(user, data.otp, "password_reset")
         
     user.hashed_password = get_password_hash(data.new_password)
     user.otp_code = None
+    user.otp_purpose = None
+    user.otp_expires_at = None
     await user.save()
     return {"message": "Password updated"}
 
@@ -201,7 +222,7 @@ async def google_login(data: OAuthLoginRequest):
         resp = await client.get("https://www.googleapis.com/oauth2/v3/userinfo", headers={"Authorization": f"Bearer {data.token}"})
         user_info = resp.json()
 
-    if "email" not in user_info: raise HTTPException(400, "Invalid Google Token")
+    if not user_info.get("email_verified") or "email" not in user_info: raise HTTPException(400, "Invalid Google Token")
     email = user_info["email"]
     
     user = await User.find_one(User.email == email)
@@ -242,7 +263,7 @@ async def github_login(data: OAuthLoginRequest):
         email_resp = await client.get("https://api.github.com/user/emails", headers=headers)
         if email_resp.status_code != 200: raise HTTPException(400, "Failed to fetch GitHub emails")
         
-        primary_email = next((e['email'] for e in email_resp.json() if e['primary']), None)
+        primary_email = next((e['email'] for e in email_resp.json() if e['primary'] and e.get('verified')), None)
         if not primary_email: raise HTTPException(400, "No email found")
 
         user_resp = await client.get("https://api.github.com/user", headers=headers)
@@ -268,4 +289,6 @@ async def github_login(data: OAuthLoginRequest):
 
 @router.get("/me", tags=["Authentication"])
 async def read_users_me(user: User = Depends(get_current_user)):
-    return user
+    return {"email": user.email, "first_name": user.first_name,
+            "last_name": user.last_name, "is_verified": user.is_verified,
+            "is_active": user.is_active}

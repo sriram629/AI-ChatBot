@@ -28,7 +28,7 @@ export const useChatSocket = (chatId: string | undefined) => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionKey, setConnectionKey] = useState(0);
-  const pendingMessage = useRef<{ content: string; attachment: any } | null>(
+  const pendingMessage = useRef<{ content: string; attachment: any; tempId: string } | null>(
     null
   );
 
@@ -69,13 +69,18 @@ export const useChatSocket = (chatId: string | undefined) => {
     const url = getSocketUrl(`/api/chat/ws/${chatId}?token=${token}`);
     const ws = new WebSocket(url);
 
+    let disposed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     ws.onopen = () => {
+      setIsConnecting(false);
       if (pendingMessage.current) {
+        setIsStreaming(true);
         ws.send(
           JSON.stringify({
             type: "message",
             message: pendingMessage.current.content,
             attachment: pendingMessage.current.attachment,
+            tempId: pendingMessage.current.tempId,
           })
         );
         pendingMessage.current = null;
@@ -83,7 +88,14 @@ export const useChatSocket = (chatId: string | undefined) => {
     };
 
     ws.onmessage = (event) => {
+      if (disposed) return;
       const data = JSON.parse(event.data);
+      if (data.type === "error") {
+        setIsStreaming(false);
+        setStatus(null);
+        toast.error(data.content || "Chat failed");
+        return;
+      }
       if (data.type === "start") {
         setIsStreaming(true);
         setStatus(null);
@@ -99,7 +111,7 @@ export const useChatSocket = (chatId: string | undefined) => {
           const newArr = [...prev];
           const lastMsg = newArr[newArr.length - 1];
           if (lastMsg && lastMsg.role === "assistant")
-            lastMsg.content += data.content;
+            newArr[newArr.length - 1] = { ...lastMsg, content: lastMsg.content + data.content };
           return newArr;
         });
       } else if (data.type === "end") {
@@ -116,18 +128,28 @@ export const useChatSocket = (chatId: string | undefined) => {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      if (disposed) return;
       setIsStreaming(false);
       setStatus(null);
+      if (event.code !== 1008) {
+        reconnectTimer = setTimeout(() => setConnectionKey((key) => key + 1), 3000);
+      } else {
+        toast.error("Session access denied. Please sign in again.");
+      }
     };
 
     socketRef.current = ws;
-    return () => ws.close();
+    return () => {
+      disposed = true;
+      clearTimeout(reconnectTimer);
+      ws.close();
+    };
   }, [token, chatId, connectionKey]);
 
   const sendMessage = useCallback(
     async (content: string, attachment: any = null) => {
-      if (!content.trim() && !attachment) return;
+      if ((!content.trim() && !attachment) || isStreaming || pendingMessage.current) return;
       const tempId = Date.now().toString();
 
       setMessages((prev) => [
@@ -152,7 +174,14 @@ export const useChatSocket = (chatId: string | undefined) => {
         );
       } else {
         try {
-          pendingMessage.current = { content, attachment };
+          pendingMessage.current = { content, attachment, tempId };
+          if (chatId) {
+            setStatus("Reconnecting...");
+            if (socketRef.current?.readyState !== WebSocket.CONNECTING) {
+              setConnectionKey((key) => key + 1);
+            }
+            return;
+          }
           const res = await api.post("/api/chat/sessions");
           navigate(`/chat/${res.data.session_id}`, { replace: true });
           window.dispatchEvent(new Event("session-updated"));
@@ -163,12 +192,12 @@ export const useChatSocket = (chatId: string | undefined) => {
         }
       }
     },
-    [chatId, navigate]
+    [chatId, navigate, isStreaming]
   );
 
   const editMessage = useCallback((messageId: string, newContent: string) => {
-    if (socketRef.current?.readyState !== WebSocket.OPEN) {
-      toast.error("Connection lost");
+    if (isStreaming || socketRef.current?.readyState !== WebSocket.OPEN) {
+      toast.error("Wait for the current response or reconnect");
       return;
     }
 
@@ -184,10 +213,10 @@ export const useChatSocket = (chatId: string | undefined) => {
     socketRef.current.send(
       JSON.stringify({ type: "edit", messageId, newContent })
     );
-  }, []);
+  }, [isStreaming]);
 
   const regenerateResponse = useCallback(() => {
-    if (socketRef.current?.readyState !== WebSocket.OPEN) return;
+    if (isStreaming || socketRef.current?.readyState !== WebSocket.OPEN) return;
     setIsStreaming(true);
     setMessages((prev) =>
       prev.length > 0 && prev[prev.length - 1].role === "assistant"
@@ -195,14 +224,14 @@ export const useChatSocket = (chatId: string | undefined) => {
         : prev
     );
     socketRef.current.send(JSON.stringify({ type: "regenerate" }));
-  }, []);
+  }, [isStreaming]);
 
   const stopGeneration = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.close();
-      setIsStreaming(false);
-      setStatus(null);
-      setConnectionKey((prev) => prev + 1);
+    pendingMessage.current = null;
+    setIsStreaming(false);
+    setStatus(null);
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: "stop" }));
     }
   }, []);
 

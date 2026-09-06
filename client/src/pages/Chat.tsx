@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowDown, LogOut, Loader2 } from "lucide-react";
+import { ArrowDown, LogOut, Loader2, PanelLeftOpen } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import ChatSidebar from "@/components/ChatSidebar";
 import ChatMessage from "@/components/ChatMessage";
@@ -18,6 +18,12 @@ const Chat = () => {
   const { chatId } = useParams();
   const { isAuthenticated, logout, firstName, userEmail } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 1024);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isMobile && sidebarOpen) contentRef.current?.setAttribute('inert', '');
+    else contentRef.current?.removeAttribute('inert');
+  }, [isMobile, sidebarOpen]);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
@@ -43,6 +49,7 @@ const Chat = () => {
 
   useEffect(() => {
     const handleResize = () => {
+      setIsMobile(window.innerWidth < 1024);
       if (window.innerWidth < 1024) {
         setSidebarOpen(false);
       } else {
@@ -96,23 +103,26 @@ const Chat = () => {
     : userEmail?.[0].toUpperCase();
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
+    <div className="flex h-dvh w-full overflow-hidden bg-background">
       <ChatSidebar
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
         currentChatId={chatId}
+        isMobile={isMobile}
+        onNavigate={() => { if (isMobile) setSidebarOpen(false); }}
       />
 
-      {sidebarOpen && window.innerWidth < 1024 && (
-        <div
+      {sidebarOpen && isMobile && (
+        <button aria-label="Close sidebar" tabIndex={-1}
           className="fixed inset-0 bg-black/40 z-40 animate-in fade-in duration-300 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      <div className="flex flex-col flex-1 h-full min-w-0 bg-background relative transition-all duration-300 ease-in-out">
+      <div ref={contentRef} className="flex flex-col flex-1 h-full min-w-0 bg-background relative transition-all duration-300 ease-in-out">
         <header className="flex items-center justify-between px-4 h-16 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-30 shrink-0">
           <div className="flex items-center gap-3">
+            {isMobile && <Button variant="ghost" size="icon" aria-label="Open sidebar" onClick={() => setSidebarOpen(true)}><PanelLeftOpen className="h-5 w-5" /></Button>}
             <h1 className="text-sm font-medium text-muted-foreground truncate max-w-[140px] sm:max-w-[300px]">
               {chatId ? "Conversation" : "New Chat"}
             </h1>
@@ -121,6 +131,7 @@ const Chat = () => {
           <div className="relative" ref={profileRef}>
             <Button
               variant="ghost"
+              aria-label="Account menu" aria-expanded={isProfileOpen}
               size="icon"
               className="rounded-full h-8 w-8 bg-secondary border border-border"
               onClick={() => setIsProfileOpen(!isProfileOpen)}
@@ -186,7 +197,7 @@ const Chat = () => {
               </div>
             </div>
           ) : isNewChat ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-4">
+            <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center p-4">
               <div className="w-full max-w-2xl flex flex-col items-center gap-6 sm:gap-8 text-center animate-in fade-in duration-700">
                 <img
                   src={logo}
@@ -208,11 +219,11 @@ const Chat = () => {
           ) : (
             <>
               <ScrollArea
-                className="flex-1 h-full w-full"
+                className="flex-1 min-h-0 w-full"
                 onScroll={handleScroll}
                 viewportRef={scrollViewportRef}
               >
-                <div className="w-full max-w-3xl mx-auto px-4 py-8 pb-40 flex flex-col gap-2">
+                <div className="w-full max-w-3xl mx-auto px-4 py-8 flex flex-col gap-2">
                   {messages.map((m, i) => (
                     <ChatMessage
                       key={m.id || i}
@@ -250,12 +261,13 @@ const Chat = () => {
                     })
                   }
                   size="icon"
+                  aria-label="Scroll to latest message"
                   className="absolute bottom-32 left-1/2 -translate-x-1/2 rounded-full shadow-lg z-30 bg-background border border-border hover:bg-blue-500/10 hover:border-blue-500/50 group"
                 >
                   <ArrowDown className="h-4 w-4 text-zinc-400 group-hover:text-blue-500 transition-colors" />
                 </Button>
               )}
-              <div className="absolute bottom-0 left-0 right-0 p-4 bg-linear-to-t from-background via-background/95 to-transparent z-20">
+              <div className="shrink-0 p-3 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-border/40 bg-background z-20">
                 <div className="max-w-3xl mx-auto w-full">
                   <ChatInput
                     onSend={handleSendMessage}

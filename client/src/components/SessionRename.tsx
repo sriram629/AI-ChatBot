@@ -10,7 +10,7 @@ export default function SessionRename({ session, onClose, onSaved }: { session: 
   const [error, setError] = useState("");
   useEffect(() => { ref.current?.showModal(); }, []);
   return <dialog ref={ref} aria-labelledby={id} onCancel={e => { if (busy) e.preventDefault(); else onClose(); }} onClose={onClose}
-    className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-sm rounded-2xl border border-border bg-card p-6 text-foreground shadow-2xl backdrop:bg-black/60">
+    className="fixed inset-0 m-auto w-[calc(100%_-_2rem)] max-w-sm rounded-2xl border border-border bg-card p-6 text-foreground shadow-2xl backdrop:bg-black/60">
     <form onSubmit={async e => {
       e.preventDefault(); if (!title.trim() || busy) return;
       setBusy(true); setError("");
@@ -27,4 +27,3 @@ export default function SessionRename({ session, onClose, onSaved }: { session: 
     </form>
   </dialog>;
 }
-

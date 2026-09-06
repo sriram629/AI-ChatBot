@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -10,8 +10,15 @@ import SessionRename from "./SessionRename";
 import SessionDelete from "./SessionDelete";
 
 export interface Session { session_id: string; title: string; updated_at: string; }
-interface Props { isOpen: boolean; onToggle: () => void; currentChatId?: string; }
-const ChatSidebar = ({ isOpen, onToggle, currentChatId }: Props) => {
+interface Props { isOpen: boolean; onToggle: () => void; currentChatId?: string; isMobile: boolean; onNavigate: () => void; }
+const ChatSidebar = ({ isOpen, onToggle, currentChatId, isMobile, onNavigate }: Props) => {
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!isMobile || !isOpen) return;
+    const previous = document.activeElement as HTMLElement;
+    panel.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    return () => previous?.focus();
+  }, [isMobile, isOpen]);
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -33,14 +40,26 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId }: Props) => {
     };
   }, [fetchSessions]);
   return (
-    <aside aria-label="Conversations" className={cn("flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar-background", isOpen ? "w-72" : "w-16")}>
+    <aside ref={panel} role={isMobile ? "dialog" : undefined} aria-modal={isMobile && isOpen ? true : undefined} aria-label="Conversations"
+      onKeyDown={e => {
+        if (!isMobile || !isOpen || document.querySelector('dialog[open]')) return;
+        if (e.key === 'Escape') { e.preventDefault(); onToggle(); }
+        if (e.key === 'Tab') {
+          const buttons = panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], [tabindex="0"]');
+          if (!buttons?.length) return;
+          const first = buttons[0], last = buttons[buttons.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+      }}
+      className={cn("h-full shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar-background", isMobile ? (isOpen ? "fixed inset-y-0 left-0 z-50 flex w-80 max-w-[85vw] shadow-2xl" : "hidden") : (isOpen ? "flex w-72" : "flex w-16"))}>
       <div className={cn("flex h-16 shrink-0 items-center border-b border-border px-3", isOpen ? "justify-between" : "justify-center")}>
         {isOpen && <div className="flex items-center gap-2"><img src={logo} alt="" className="h-8 w-8" /><span className="font-semibold">AI Chat</span></div>}
         <Button variant="ghost" size="icon" aria-label={isOpen ? "Collapse sidebar" : "Open sidebar"} onClick={onToggle}>
           {isOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeftOpen className="h-5 w-5" />}
         </Button>
       </div>
-      <div className="p-3"><Button onClick={() => navigate("/chat")} aria-label="New chat" className={cn("gap-2", isOpen ? "w-full justify-start" : "h-10 w-10 p-0")}><Plus className="h-4 w-4" />{isOpen && "New chat"}</Button></div>
+      <div className="p-3"><Button onClick={() => { navigate("/chat"); onNavigate(); }} aria-label="New chat" className={cn("gap-2", isOpen ? "w-full justify-start" : "h-10 w-10 p-0")}><Plus className="h-4 w-4" />{isOpen && "New chat"}</Button></div>
       <ScrollArea className="min-h-0 flex-1">
         {isOpen && <p className="px-5 py-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">Conversations</p>}
         {isLoading && <div role="status" className="flex justify-center p-5"><Loader2 aria-label="Loading conversations" className="h-5 w-5 animate-spin" /></div>}
@@ -49,7 +68,7 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId }: Props) => {
         <div className="space-y-1 px-2 pb-4">
           {sessions.map(session => (
             <div key={session.session_id} className={cn("group flex min-w-0 items-center rounded-xl", currentChatId === session.session_id ? "bg-sidebar-accent" : "hover:bg-muted/50")}>
-              <button aria-current={currentChatId === session.session_id ? "page" : undefined} title={session.title} onClick={() => navigate("/chat/" + session.session_id)} className={cn("flex min-w-0 flex-1 items-center gap-3 rounded-xl p-3 text-left focus-visible:outline-2 focus-visible:outline-primary", !isOpen && "justify-center")}>
+              <button aria-current={currentChatId === session.session_id ? "page" : undefined} title={session.title} onClick={() => { navigate("/chat/" + session.session_id); onNavigate(); }} className={cn("flex min-w-0 flex-1 items-center gap-3 rounded-xl p-3 text-left focus-visible:outline-2 focus-visible:outline-primary", !isOpen && "justify-center")}>
                 <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
                 {isOpen && <span className="min-w-0"><span className="block truncate text-sm">{session.title || "New chat"}</span><span className="mt-0.5 block text-xs text-muted-foreground">{new Date(session.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></span>}
               </button>

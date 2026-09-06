@@ -52,7 +52,8 @@ const ChatInput = ({
       setAttachment(res.data);
       toast.success("File attached");
     } catch (err) {
-      toast.error("Upload failed");
+      const error = err as { response?: { data?: { detail?: string } }; message?: string };
+      toast.error(error.response?.data?.detail || error.message || "Upload failed");
       console.error(err);
     } finally {
       setIsUploading(false);

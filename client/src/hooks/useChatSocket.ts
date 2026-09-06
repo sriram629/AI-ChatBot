@@ -22,6 +22,7 @@ export interface Message {
 export const useChatSocket = (chatId: string | undefined) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [status, setStatus] = useState<string | null>(null);
+  const [model, setModel] = useState<string | null>(null);
   const { token } = useAuth();
   const navigate = useNavigate();
   const socketRef = useRef<WebSocket | null>(null);
@@ -68,6 +69,7 @@ export const useChatSocket = (chatId: string | undefined) => {
 
     const url = getSocketUrl(`/api/chat/ws/${chatId}?token=${token}`);
     const ws = new WebSocket(url);
+    setModel(null);
 
     let disposed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -90,6 +92,11 @@ export const useChatSocket = (chatId: string | undefined) => {
     ws.onmessage = (event) => {
       if (disposed) return;
       const data = JSON.parse(event.data);
+      if (data.type === "model") {
+        if (["Gemini", "Groq", "Mistral"].includes(data.content)) setModel(data.content);
+        setStatus(null);
+        return;
+      }
       if (data.type === "error") {
         setIsStreaming(false);
         setStatus(null);
@@ -244,5 +251,6 @@ export const useChatSocket = (chatId: string | undefined) => {
     isStreaming,
     isConnecting,
     status,
+    model,
   };
 };

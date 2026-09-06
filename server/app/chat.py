@@ -78,6 +78,7 @@ def provider_messages(prompt, history, context, persona):
 async def call_mistral(prompt, history, websocket, context):
     full = ""
     try:
+        await safe_send(websocket, {"type": "model", "content": "Mistral"})
         stream = await mistral_client.chat.stream_async(
             model="mistral-small-latest",
             messages=provider_messages(prompt, history, context, MISTRAL_PROMPT),
@@ -103,6 +104,7 @@ async def call_groq(prompt, history, websocket, context):
     try:
         if groq_client is None:
             raise ValueError("Groq is not configured")
+        await safe_send(websocket, {"type": "model", "content": "Groq"})
         stream = await groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=provider_messages(prompt, history, context, GROQ_PROMPT), stream=True)
@@ -132,6 +134,7 @@ async def call_gemini(prompt, history, websocket, context, attachments):
         if attachment.type == "image":
             parts.append(image_part(attachment.content))
     try:
+        await safe_send(websocket, {"type": "model", "content": "Gemini"})
         chat = gemini_model.start_chat(history=history)
         stream = await chat.send_message_async(parts, stream=True)
         async for chunk in stream:

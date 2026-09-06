@@ -30,6 +30,7 @@ const Chat = () => {
     isStreaming,
     isConnecting,
     status,
+    model,
   } = useChatSocket(chatId);
 
   const [autoScroll, setAutoScroll] = useState(true);
@@ -112,6 +113,7 @@ const Chat = () => {
             <h1 className="text-sm font-medium text-muted-foreground truncate max-w-[140px] sm:max-w-[300px]">
               {chatId ? "Conversation" : "New Chat"}
             </h1>
+            {model && <span aria-label="Response provider" className="rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground">{model}{model !== "Gemini" ? " · backup" : ""}</span>}
           </div>
           <div className="relative" ref={profileRef}>
             <Button

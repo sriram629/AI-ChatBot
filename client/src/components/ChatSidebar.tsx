@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Loader2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/transparent-logo.png";
@@ -63,24 +62,26 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId, isMobile, onNavigate }: 
         </Button>
       </div>
       <div className="p-3"><Button onClick={() => { navigate("/chat"); onNavigate(); }} aria-label="New chat" className={cn("gap-2", isOpen ? "w-full justify-start" : "h-10 w-10 p-0")}><Plus className="h-4 w-4" />{isOpen && "New chat"}</Button></div>
-      <ScrollArea className="min-h-0 flex-1">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
         {isOpen && <p className="px-5 py-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">Conversations</p>}
         {isLoading && <div role="status" className="flex justify-center p-5"><Loader2 aria-label="Loading conversations" className="h-5 w-5 animate-spin" /></div>}
         {loadError && isOpen && <div className="px-4 py-3 text-sm text-muted-foreground">Couldn’t load conversations.<button onClick={fetchSessions} className="ml-1 text-primary underline">Retry</button></div>}
         {!isLoading && !loadError && sessions.length === 0 && isOpen && <p className="px-5 py-4 text-sm leading-6 text-muted-foreground">Your conversations will appear here after your first message.</p>}
-        <div className="space-y-1 px-2 pb-4">
+        <div className={cn("space-y-1 pb-4", isOpen ? "px-3" : "px-2")}>
           {sessions.map(session => (
-            <div key={session.session_id} className={cn("group flex min-w-0 items-center rounded-xl", currentChatId === session.session_id ? "bg-sidebar-accent" : "hover:bg-muted/50")}>
-              <button aria-current={currentChatId === session.session_id ? "page" : undefined} title={session.title} onClick={() => { navigate("/chat/" + session.session_id); onNavigate(); }} className={cn("flex min-w-0 flex-1 items-center gap-3 rounded-xl p-3 text-left focus-visible:outline-2 focus-visible:outline-primary", !isOpen && "justify-center")}>
+            <div key={session.session_id} className={cn("group grid min-w-0 items-center rounded-xl", isOpen ? "grid-cols-[minmax(0,1fr)_auto] pr-1" : "grid-cols-1", currentChatId === session.session_id ? "bg-sidebar-accent" : "hover:bg-muted/50")}>
+              <button aria-current={currentChatId === session.session_id ? "page" : undefined} aria-label={session.title || "New chat"} title={session.title} onClick={() => { navigate("/chat/" + session.session_id); onNavigate(); }} className={cn("flex min-w-0 items-center gap-2 rounded-xl p-3 text-left focus-visible:outline-2 focus-visible:outline-primary", !isOpen && "justify-center")}>
                 <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-                {isOpen && <span className="min-w-0"><span className="block truncate text-sm">{session.title || "New chat"}</span><span className="mt-0.5 block text-xs text-muted-foreground">{new Date(session.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></span>}
+                {isOpen && <span className="min-w-0 flex-1"><span className="block truncate text-sm">{session.title.length > 24 ? session.title.slice(0, 24).trimEnd() + "…" : session.title || "New chat"}</span><span className="mt-0.5 block text-xs text-muted-foreground">{new Date(session.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></span>}
               </button>
-              {isOpen && <Button variant="ghost" size="icon" aria-label={"Rename " + session.title} onClick={() => setRenaming(session)} className="mr-1 h-8 w-8 shrink-0"><Pencil className="h-3.5 w-3.5 text-muted-foreground" /></Button>}
-              {isOpen && <Button variant="ghost" size="icon" aria-label={"Delete " + session.title} onClick={() => setDeleting(session)} className="mr-1 h-8 w-8 shrink-0"><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></Button>}
+              {isOpen && <div className="flex shrink-0 items-center">
+                <Button variant="ghost" size="icon" title="Rename conversation" aria-label={"Rename " + session.title} onClick={() => setRenaming(session)} className="h-10 w-9 shrink-0"><Pencil className="h-4 w-4 text-muted-foreground" /></Button>
+                <Button variant="ghost" size="icon" title="Delete conversation" aria-label={"Delete " + session.title} onClick={() => setDeleting(session)} className="h-10 w-9 shrink-0"><Trash2 className="h-4 w-4 text-muted-foreground" /></Button>
+              </div>}
             </div>
           ))}
         </div>
-      </ScrollArea>
+      </div>
       {renaming && <SessionRename session={renaming} onClose={() => setRenaming(null)} onSaved={() => { setRenaming(null); fetchSessions(); }} />}
       {deleting && <SessionDelete session={deleting} onClose={() => setDeleting(null)} onDeleted={() => {
         if (deleting.session_id === currentChatId) navigate("/chat");

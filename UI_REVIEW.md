@@ -23,7 +23,7 @@ npx playwright install --with-deps chromium firefox webkit
 npx playwright test
 ```
 
-The UI regression workflow runs 18 scenarios in four configurations (Chromium, Firefox, WebKit and iPhone emulation): 72 checks. It saves desktop/mobile screenshots and failure traces as `browser-test-results` for seven days. Coverage includes sending, attachments, processing status, providers, errors/offline feedback, rename persistence and failure, confirmed removal, mobile focus/navigation, prompts, code/tables/links, image previews, stopping, editing/regenerating and clipboard denial.
+The UI regression workflow runs 20 scenarios in four configurations (Chromium, Firefox, WebKit and iPhone emulation): 80 checks. It saves desktop/mobile screenshots and failure traces as `browser-test-results` for seven days. Coverage includes sending, attachments, processing status, providers, errors/offline feedback, rename persistence and failure, confirmed removal, mobile focus/navigation, prompts, code/tables/links, image previews, stopping, editing/regenerating, clipboard denial, the focused composer outline and action visibility with long sidebar titles.
 
 Run from the repository root with server dependencies installed:
 

@@ -33,6 +33,7 @@ test('failed rename keeps the old name and allows retry', async ({ page, app }) 
   await enterChat(page);
   if ((page.viewportSize()?.width || 0) < 1024) await page.getByRole('button', { name: 'Open sidebar' }).click();
   await page.route('**/api/chat/sessions/session-1', route => route.fulfill({ status: 503, json: { detail: 'Unavailable' } }));
+  await page.getByRole('button', { name: 'Project notes', exact: true }).hover();
   await page.getByRole('button', { name: 'Rename Project notes' }).click();
   await page.getByLabel('Conversation name').fill('New name');
   await page.getByRole('button', { name: 'Save name' }).click();

@@ -17,9 +17,11 @@ test('long titles keep padded rename and delete controls inside the sidebar', as
   const titleText = page.getByRole('button', { name: title, exact: true }).locator('span').first();
   expect((await titleText.innerText()).split('\n')[0].length).toBeLessThanOrEqual(25);
   await page.screenshot({ path: testInfo.outputPath('long-title-sidebar.png'), animations: 'disabled' });
+  await page.getByRole('button', { name: title, exact: true }).hover();
   await rename.click();
   await expect(page.getByLabel('Conversation name')).toHaveValue(title);
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: title, exact: true }).hover();
   await remove.click();
   await expect(page.getByRole('dialog', { name: 'Delete conversation?' })).toBeVisible();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();

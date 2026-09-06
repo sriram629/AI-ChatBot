@@ -2,6 +2,7 @@ import { test, expect, enterChat } from './fixtures';
 test('rename saves, persists on reload, and rejects empty names', async ({ page, app }) => {
   await enterChat(page);
   if ((page.viewportSize()?.width || 0) < 1024) await page.getByRole('button', { name: 'Open sidebar' }).click();
+  await page.getByRole('button', { name: 'Project notes', exact: true }).hover();
   await page.getByRole('button', { name: 'Rename Project notes' }).click();
   await expect(page.getByRole('dialog', { name: 'Rename conversation', exact: true })).toBeVisible();
   await page.getByLabel('Conversation name').fill('   ');

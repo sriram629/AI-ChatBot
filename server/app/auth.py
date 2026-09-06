@@ -19,7 +19,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 router = APIRouter()
 
-# --- SCHEMAS ---
 class UserRegister(BaseModel):
     email: EmailStr
     password: str
@@ -50,7 +49,6 @@ class ResetPasswordConfirm(BaseModel):
 class Resend_OTP(BaseModel):
     email: EmailStr
 
-# --- HELPERS ---
 def get_password_hash(password):
     return pwd_context.hash(password)
 
@@ -104,7 +102,6 @@ async def validate_otp(user, otp: str, purpose: str):
         await user.inc({User.otp_attempts: 1})
         raise HTTPException(400, "Invalid OTP")
 
-# --- AUTHENTICATION ENDPOINTS ---
 
 @router.post("/register", tags=["Authentication"])
 async def register(user_data: UserRegister):
@@ -214,7 +211,6 @@ async def reset_password_confirm(data: ResetPasswordConfirm):
     await user.save()
     return {"message": "Password updated"}
 
-# --- OAUTH ENDPOINTS ---
 
 @router.post("/google", tags=["OAuth"])
 async def google_login(data: OAuthLoginRequest):

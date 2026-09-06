@@ -1,4 +1,4 @@
-/* 1. The New Tailwind v4 Import */
+
 @import "tailwindcss";
 
 @media (hover: hover) and (pointer: fine) {
@@ -14,9 +14,6 @@
   }
 }
 
-/* 2. Configure the Theme Variables
-   This tells Tailwind: "When I use bg-background, use the variable --background"
-*/
 @theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -72,9 +69,6 @@
   }
 }
 
-/* 3. Define the actual values (Dark Mode Default) 
-   NOTE: I added 'hsl(...)' around your numbers so they are valid colors.
-*/
 :root {
   --background: hsl(0 0% 7%);
   --foreground: hsl(0 0% 98%);
@@ -116,7 +110,6 @@
   --sidebar-ring: hsl(195 100% 50%);
 }
 
-/* 4. Light Mode Overrides */
 .light {
   --background: hsl(0 0% 99%);
   --foreground: hsl(220 13% 13%);
@@ -156,7 +149,6 @@
   --sidebar-ring: hsl(217 91% 60%);
 }
 
-/* 5. Base Styles */
 @layer base {
   * {
     @apply border-border;
@@ -174,7 +166,6 @@
   }
 }
 
-/* 6. Utility Classes */
 @utility glass-morphism {
   background: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(20px) saturate(180%);
@@ -191,11 +182,10 @@
 }
 
 .katex {
-  font-size: 1.1em !important; /* Make math slightly larger/readable */
+  font-size: 1.1em !important;
   line-height: 1.2 !important;
 }
 
-/* Ensure inline math doesn't break line height */
 .katex-html {
   overflow-x: auto;
 }

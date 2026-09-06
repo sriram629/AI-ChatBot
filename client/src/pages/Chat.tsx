@@ -77,7 +77,6 @@ const Chat = () => {
     }
   }, [messages, status]);
 
-  // Trigger sidebar refresh when the first message is successfully added
   useEffect(() => {
     if (messages.length === 1 && messages[0].role === "user") {
       window.dispatchEvent(new Event("refresh-sessions"));

@@ -13,6 +13,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
+import MessageImage from "./MessageImage";
 
 interface Attachment {
   type: "image" | "file";
@@ -75,9 +76,13 @@ const ChatMessage = ({
     return () => clearInterval(interval);
   }, [isLoading, content]);
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast({ description: "Copied to clipboard" });
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ description: "Copied to clipboard" });
+    } catch {
+      toast({ description: "Copy isn’t available. Select the text to copy it manually.", variant: "destructive" });
+    }
   };
 
   const handleSaveEdit = () => {
@@ -90,7 +95,7 @@ const ChatMessage = ({
   return (
     <div
       className={cn(
-        "flex gap-4 px-4 py-6 group w-full",
+        "flex gap-2 sm:gap-4 py-5 group w-full min-w-0",
         isUser ? "justify-end" : "justify-start"
       )}
     >
@@ -118,8 +123,8 @@ const ChatMessage = ({
 
       <div
         className={cn(
-          "flex flex-col gap-2 min-w-0 max-w-[90%] md:max-w-[85%]",
-          isUser && "items-end"
+          "flex flex-col gap-2 min-w-0",
+          isUser ? "items-end max-w-[90%] md:max-w-[85%]" : "flex-1"
         )}
       >
         {attachments && attachments.length > 0 && (
@@ -131,16 +136,7 @@ const ChatMessage = ({
           >
             {attachments.map((att, i) =>
               att.type === "image" ? (
-                <div
-                  key={i}
-                  className="relative rounded-xl overflow-hidden border border-border w-48 h-auto bg-black/5 shadow-sm hover:scale-[1.02] transition-transform cursor-pointer"
-                >
-                  <img
-                    src={att.url}
-                    alt="Uploaded"
-                    className="w-full h-auto object-cover"
-                  />
-                </div>
+                <MessageImage key={i} src={att.url} alt={att.filename || "Uploaded image"} />
               ) : (
                 <div
                   key={i}
@@ -166,6 +162,7 @@ const ChatMessage = ({
         {isEditing ? (
           <div className="w-full space-y-2">
             <Textarea
+              aria-label="Edit message"
               value={editedContent}
               onChange={(e) => setEditedContent(e.target.value)}
               className="min-h-[120px] bg-background border-border shadow-inner focus-visible:ring-primary/20"
@@ -190,7 +187,7 @@ const ChatMessage = ({
         ) : (
           <div
             className={cn(
-              "text-sm leading-7 selection:bg-primary/30",
+              "min-w-0 max-w-full break-words text-sm leading-7 selection:bg-primary/30 [&_p]:mb-3 [&_p:last-child]:mb-0",
               isUser
                 ? "bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-3 shadow-md"
                 : "text-foreground w-full"
@@ -219,15 +216,10 @@ const ChatMessage = ({
                   ],
                 ]}
                 components={{
-                  img: ({ src, alt }) => (
-                    <img
-                      src={src}
-                      alt={alt}
-                      className="rounded-lg border border-border my-4 max-w-full h-auto shadow-md transition-all hover:brightness-105"
-                    />
-                  ),
+                  img: ({ src, alt }) => <MessageImage src={src} alt={alt} />,
+                  pre: ({ children }) => <>{children}</>,
                   table: ({ children }) => (
-                    <div className="my-6 w-full overflow-x-auto rounded-lg border border-border shadow-sm scrollbar-thin">
+                    <div role="region" aria-label="Response table" tabIndex={0} className="my-6 max-w-full overflow-x-auto rounded-lg border border-border shadow-sm scrollbar-thin">
                       <table className="w-full text-sm border-collapse">
                         {children}
                       </table>
@@ -261,17 +253,17 @@ const ChatMessage = ({
                   a: ({ href, children }) => (
                     <a
                       href={href}
-                      className="text-primary hover:underline underline-offset-4 decoration-2"
+                      className="break-all font-medium underline underline-offset-4 decoration-2 hover:opacity-80"
                       target="_blank"
                       rel="noopener noreferrer"
                     >
                       {children}
                     </a>
                   ),
-                  code({ inline, className, children, ...props }: any) {
+                  code({ className, children }: any) {
                     const match = /language-(\w+)/.exec(className || "");
                     const codeString = String(children).replace(/\n$/, "");
-                    return !inline && match ? (
+                    return match || String(children).endsWith("\n") ? (
                       <div className="rounded-lg overflow-hidden border border-border bg-[#0d1117] w-full shadow-xl my-6">
                         <div className="flex items-center justify-between bg-zinc-900/90 px-4 py-2.5 border-b border-border/40">
                           <div className="flex items-center gap-2">
@@ -281,7 +273,7 @@ const ChatMessage = ({
                               <div className="w-2.5 h-2.5 rounded-full bg-green-500/20" />
                             </div>
                             <span className="text-[11px] font-mono text-zinc-500 uppercase ml-2 tracking-widest">
-                              {match[1]}
+                              {match?.[1] || "text"}
                             </span>
                           </div>
                           {!isLoading && (
@@ -295,7 +287,7 @@ const ChatMessage = ({
                         </div>
                         <SyntaxHighlighter
                           style={vscDarkPlus}
-                          language={match[1]}
+                          language={match?.[1] || "text"}
                           PreTag="div"
                           customStyle={{
                             margin: 0,
@@ -304,15 +296,13 @@ const ChatMessage = ({
                             fontSize: "13px",
                             lineHeight: "1.7",
                           }}
-                          {...props}
                         >
                           {codeString}
                         </SyntaxHighlighter>
                       </div>
                     ) : (
                       <code
-                        className="bg-muted/80 px-1.5 py-0.5 rounded text-[13px] font-mono border border-border/50 text-primary-foreground dark:text-primary"
-                        {...props}
+                        className="bg-muted px-1.5 py-0.5 rounded text-[13px] font-mono border border-border/50 text-foreground"
                       >
                         {children}
                       </code>
@@ -327,7 +317,7 @@ const ChatMessage = ({
         )}
 
         {!isEditing && !isLoading && content.length > 0 && (
-          <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all mt-2 ml-1">
+          <div className="flex items-center gap-1.5 opacity-100 md:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all mt-2 ml-1">
             <Button
               variant="ghost"
               size="icon"

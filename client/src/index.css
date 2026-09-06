@@ -1,6 +1,19 @@
 /* 1. The New Tailwind v4 Import */
 @import "tailwindcss";
 
+@media (hover: hover) and (pointer: fine) {
+  .conversation-actions {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .group:hover > .conversation-actions,
+  .group:focus-within > .conversation-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 /* 2. Configure the Theme Variables
    This tells Tailwind: "When I use bg-background, use the variable --background"
 */

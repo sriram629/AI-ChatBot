@@ -23,11 +23,23 @@ class SessionControlTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(HTTPException): await chat.delete_session('foreign', object())
 
     async def test_rename_owned_session(self):
-        session = SimpleNamespace(session_id='one', title='old', save=AsyncMock())
+        session = SimpleNamespace(session_id='one', title='old', set=AsyncMock())
         with patch.object(chat, 'get_owned_session', AsyncMock(return_value=session)):
             result = await chat.rename_session('one', chat.RenameSessionRequest(title='  New name  '), object())
         self.assertEqual(result['title'], 'New name')
-        session.save.assert_awaited_once()
+        session.set.assert_awaited_once()
+        self.assertEqual(session.set.call_args.args[0]['title'], 'New name')
+        self.assertNotIn('is_deleted', session.set.call_args.args[0])
+
+    async def test_deleted_and_foreign_sessions_are_inaccessible(self):
+        from test_reliability import Field
+        for result in (None, SimpleNamespace(is_deleted=True)):
+            fake = SimpleNamespace(session_id=Field('session_id'), user_email=Field('user_email'),
+                                   find_one=AsyncMock(return_value=result))
+            with patch.object(chat, 'ChatSession', fake):
+                with self.assertRaises(HTTPException):
+                    await chat.get_owned_session('one', SimpleNamespace(email='owner'))
+            fake.find_one.assert_awaited_once_with(('session_id', 'eq', 'one'), ('user_email', 'eq', 'owner'))
 
     async def test_rename_other_session_denied(self):
         with patch.object(chat, 'get_owned_session', AsyncMock(side_effect=HTTPException(404))):

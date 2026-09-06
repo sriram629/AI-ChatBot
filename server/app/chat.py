@@ -239,13 +239,18 @@ async def process_message(websocket, session_id, user, payload):
                 context += "\nSearch unavailable. Do not claim current web verification."
         history = await get_formatted_history(session_id, trigger.timestamp)
         result = await call_gemini(query, history, websocket, context, attachments)
+    session = await get_owned_session(session_id, user)
     reply = await ChatMessage(session_id=session_id, user_email=user.email,
                               role="assistant", content=result).insert()
     await safe_send(websocket, {"type": "id_update", "tempId": "ai-response", "realId": str(reply.id)})
-    session = await get_owned_session(session_id, user)
     if session.title == "New Chat":
         session.title = (message.strip() or "Attachment conversation")[:60]
-    await session.save()
+        # Do not overwrite a concurrent rename or restore a removed conversation.
+        await ChatSession.find({"session_id": session_id, "user_email": user.email,
+                                "title": "New Chat", "is_deleted": {"$ne": True}}).update(
+            {"$set": {"title": session.title, "updated_at": datetime.utcnow()}})
+    else:
+        await session.set({"updated_at": datetime.utcnow()})
     await safe_send(websocket, {"type": "title_update", "id": session_id, "title": session.title})
     await safe_send(websocket, {"type": "end"})
 
@@ -337,7 +342,7 @@ class RenameSessionRequest(BaseModel):
 async def rename_session(session_id: str, data: RenameSessionRequest, user: User = Depends(get_current_user)):
     session = await get_owned_session(session_id, user)
     session.title = data.title
-    await session.save()
+    await session.set({"title": data.title, "updated_at": datetime.utcnow()})
     return {"session_id": session.session_id, "title": session.title}
 
 @router.delete("/sessions/{session_id}")

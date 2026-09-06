@@ -23,4 +23,3 @@ test("upload failure is readable and Enter cannot send during upload", async ({ 
   expect(app.requests).toHaveLength(0);
   await expect(page.getByRole("alert").filter({ hasText: "Scanned PDFs require OCR" }).first()).toBeVisible();
 });
-

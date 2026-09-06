@@ -9,4 +9,3 @@ test("chat opens and sends a message without duplicating it", async ({ page, app
   app.emit({ type: "end" });
   await expect(page.getByText("Hello Sam", { exact: true })).toBeVisible();
 });
-

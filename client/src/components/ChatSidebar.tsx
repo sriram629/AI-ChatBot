@@ -1,46 +1,26 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Plus,
-  MessageSquare,
-  PanelLeftClose,
-  PanelLeftOpen,
-} from "lucide-react";
+import { Plus, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/transparent-logo.png";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
+import SessionRename from "./SessionRename";
 
-interface ChatSidebarProps {
-  isOpen: boolean;
-  onToggle: () => void;
-  currentChatId?: string;
-}
-
-const ChatSidebar = ({ isOpen, onToggle, currentChatId }: ChatSidebarProps) => {
+export interface Session { session_id: string; title: string; updated_at: string; }
+interface Props { isOpen: boolean; onToggle: () => void; currentChatId?: string; }
+const ChatSidebar = ({ isOpen, onToggle, currentChatId }: Props) => {
   const navigate = useNavigate();
-  const [sessions, setSessions] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  const fetchSessions = async () => {
-    try {
-      const res = await api.get("/api/chat/sessions");
-      setSessions(res.data);
-    } catch (err) {
-      console.error("Failed to fetch sessions");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+  const [loadError, setLoadError] = useState(false);
+  const [renaming, setRenaming] = useState<Session | null>(null);
+  const fetchSessions = useCallback(async () => {
+    try { const res = await api.get("/api/chat/sessions"); setSessions(res.data); setLoadError(false); }
+    catch { setLoadError(true); }
+    finally { setIsLoading(false); }
+  }, []);
   useEffect(() => {
     fetchSessions();
     window.addEventListener("session-updated", fetchSessions);
@@ -49,163 +29,35 @@ const ChatSidebar = ({ isOpen, onToggle, currentChatId }: ChatSidebarProps) => {
       window.removeEventListener("session-updated", fetchSessions);
       window.removeEventListener("refresh-sessions", fetchSessions);
     };
-  }, []);
-
-  const handleNewChat = () => {
-    navigate("/chat");
-  };
-
-  // Check if the current chat is "new" and not yet in the session list
-  const isCurrentChatNew =
-    currentChatId && !sessions.find((s) => s.session_id === currentChatId);
-
+  }, [fetchSessions]);
   return (
-    <aside
-      className={cn(
-        "flex flex-col bg-sidebar border-r border-border transition-all duration-300 h-full shrink-0 overflow-hidden",
-        isOpen ? "w-72" : "w-[60px]"
-      )}
-    >
-      <div
-        className={cn(
-          "h-16 flex items-center border-b border-border/50 transition-all duration-300",
-          isOpen ? "px-4 justify-between" : "justify-center px-0"
-        )}
-      >
-        {isOpen ? (
-          <>
-            <div className="flex items-center gap-3 font-semibold text-lg animate-in fade-in duration-300 min-w-0">
-              <img src={logo} alt="Logo" className="w-8 h-8 shrink-0" />
-              <span className="truncate">AI Chat</span>
+    <aside aria-label="Conversations" className={cn("flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar-background", isOpen ? "w-72" : "w-16")}>
+      <div className={cn("flex h-16 shrink-0 items-center border-b border-border px-3", isOpen ? "justify-between" : "justify-center")}>
+        {isOpen && <div className="flex items-center gap-2"><img src={logo} alt="" className="h-8 w-8" /><span className="font-semibold">AI Chat</span></div>}
+        <Button variant="ghost" size="icon" aria-label={isOpen ? "Collapse sidebar" : "Open sidebar"} onClick={onToggle}>
+          {isOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeftOpen className="h-5 w-5" />}
+        </Button>
+      </div>
+      <div className="p-3"><Button onClick={() => navigate("/chat")} aria-label="New chat" className={cn("gap-2", isOpen ? "w-full justify-start" : "h-10 w-10 p-0")}><Plus className="h-4 w-4" />{isOpen && "New chat"}</Button></div>
+      <ScrollArea className="min-h-0 flex-1">
+        {isOpen && <p className="px-5 py-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">Conversations</p>}
+        {isLoading && <div role="status" className="flex justify-center p-5"><Loader2 aria-label="Loading conversations" className="h-5 w-5 animate-spin" /></div>}
+        {loadError && isOpen && <div className="px-4 py-3 text-sm text-muted-foreground">Couldn’t load conversations.<button onClick={fetchSessions} className="ml-1 text-primary underline">Retry</button></div>}
+        {!isLoading && !loadError && sessions.length === 0 && isOpen && <p className="px-5 py-4 text-sm leading-6 text-muted-foreground">Your conversations will appear here after your first message.</p>}
+        <div className="space-y-1 px-2 pb-4">
+          {sessions.map(session => (
+            <div key={session.session_id} className={cn("group flex min-w-0 items-center rounded-xl", currentChatId === session.session_id ? "bg-sidebar-accent" : "hover:bg-muted/50")}>
+              <button aria-current={currentChatId === session.session_id ? "page" : undefined} title={session.title} onClick={() => navigate("/chat/" + session.session_id)} className={cn("flex min-w-0 flex-1 items-center gap-3 rounded-xl p-3 text-left focus-visible:outline-2 focus-visible:outline-primary", !isOpen && "justify-center")}>
+                <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                {isOpen && <span className="min-w-0"><span className="block truncate text-sm">{session.title || "New chat"}</span><span className="mt-0.5 block text-xs text-muted-foreground">{new Date(session.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></span>}
+              </button>
+              {isOpen && <Button variant="ghost" size="icon" aria-label={"Rename " + session.title} onClick={() => setRenaming(session)} className="mr-1 h-8 w-8 shrink-0"><Pencil className="h-3.5 w-3.5 text-muted-foreground" /></Button>}
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onToggle}
-              className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0"
-            >
-              <PanelLeftClose className="h-4 w-4" />
-            </Button>
-          </>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onToggle}
-                className="h-10 w-10 text-muted-foreground hover:text-foreground"
-              >
-                <PanelLeftOpen className="h-5 w-5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">Open Sidebar</TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-
-      <div
-        className={cn(
-          "py-3 border-b border-border/40 transition-all",
-          isOpen ? "px-3" : "px-0 flex justify-center"
-        )}
-      >
-        <Tooltip delayDuration={isOpen ? 1000 : 0}>
-          <TooltipTrigger asChild>
-            <Button
-              className={cn(
-                "transition-all shadow-sm",
-                !isOpen ? "h-10 w-10 p-0 rounded-full" : "w-full justify-start"
-              )}
-              variant="default"
-              size={isOpen ? "default" : "icon"}
-              onClick={handleNewChat}
-            >
-              <Plus className={cn("h-5 w-5", isOpen && "mr-2")} />
-              {isOpen && "New Chat"}
-            </Button>
-          </TooltipTrigger>
-          {!isOpen && <TooltipContent side="right">New Chat</TooltipContent>}
-        </Tooltip>
-      </div>
-
-      <ScrollArea className="flex-1">
-        {isOpen ? (
-          <div className="p-3 space-y-1 animate-in fade-in slide-in-from-left-2 duration-300">
-            <p className="px-2 py-1.5 text-xs font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1">
-              Recent
-            </p>
-
-            {/* Optimistic Skeleton for the first message of a new chat */}
-            {isCurrentChatNew && !isLoading && (
-              <div className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg bg-sidebar-accent/30 animate-pulse">
-                <MessageSquare className="h-4 w-4 shrink-0 opacity-40" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-3 bg-muted rounded w-3/4" />
-                  <div className="h-2 bg-muted rounded w-1/2" />
-                </div>
-              </div>
-            )}
-
-            {isLoading ? (
-              <div className="px-2 space-y-3">
-                <Skeleton className="h-10 w-full rounded-lg bg-muted/20" />
-                <Skeleton className="h-10 w-full rounded-lg bg-muted/20" />
-                <Skeleton className="h-10 w-full rounded-lg bg-muted/20" />
-              </div>
-            ) : (
-              sessions.map((session) => (
-                <button
-                  key={session.session_id}
-                  onClick={() => navigate(`/chat/${session.session_id}`)}
-                  className={cn(
-                    "group flex items-center gap-3 w-full text-left rounded-lg transition-all px-3 py-2.5",
-                    currentChatId === session.session_id
-                      ? "bg-sidebar-accent text-foreground font-medium shadow-sm"
-                      : "text-muted-foreground hover:bg-sidebar-accent/5 hover:text-foreground"
-                  )}
-                >
-                  <MessageSquare className="h-4 w-4 shrink-0 opacity-70 group-hover:opacity-100 transition-opacity" />
-                  <div className="flex-1 min-w-0 grid gap-0.5">
-                    <span className="text-sm truncate font-medium">
-                      {session.title || "New Chat"}
-                    </span>
-                    <span className="text-[10px] opacity-50 truncate font-normal">
-                      {new Date(session.updated_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center py-4 gap-4">
-            {sessions.slice(0, 5).map((session) => (
-              <Tooltip key={session.session_id}>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => navigate(`/chat/${session.session_id}`)}
-                    className={cn(
-                      "h-10 w-10 rounded-xl",
-                      currentChatId === session.session_id &&
-                        "bg-sidebar-accent"
-                    )}
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="right">
-                  {session.title || "New Chat"}
-                </TooltipContent>
-              </Tooltip>
-            ))}
-          </div>
-        )}
+          ))}
+        </div>
       </ScrollArea>
+      {renaming && <SessionRename session={renaming} onClose={() => setRenaming(null)} onSaved={() => { setRenaming(null); fetchSessions(); }} />}
     </aside>
   );
 };
-
 export default ChatSidebar;

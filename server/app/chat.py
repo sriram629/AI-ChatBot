@@ -14,6 +14,7 @@ from .utils import handle_file_upload, image_part
 from .tools import search_web_consensus, generate_image_tool
 from .rag import add_to_vector_db, search_vector_db, has_session_documents
 from beanie.operators import Exists
+from pydantic import BaseModel, constr
 import logging
 logger = logging.getLogger(__name__)
 
@@ -241,6 +242,7 @@ async def process_message(websocket, session_id, user, payload):
     reply = await ChatMessage(session_id=session_id, user_email=user.email,
                               role="assistant", content=result).insert()
     await safe_send(websocket, {"type": "id_update", "tempId": "ai-response", "realId": str(reply.id)})
+    session = await get_owned_session(session_id, user)
     if session.title == "New Chat":
         session.title = (message.strip() or "Attachment conversation")[:60]
     await session.save()
@@ -325,6 +327,18 @@ async def get_messages(session_id: str, user: User = Depends(get_current_user)):
         ChatMessage.session_id == session_id,
         ChatMessage.user_email == user.email,
     ).sort(+ChatMessage.timestamp).to_list()
+
+
+class RenameSessionRequest(BaseModel):
+    title: constr(strip_whitespace=True, min_length=1, max_length=100)
+
+
+@router.patch("/sessions/{session_id}")
+async def rename_session(session_id: str, data: RenameSessionRequest, user: User = Depends(get_current_user)):
+    session = await get_owned_session(session_id, user)
+    session.title = data.title
+    await session.save()
+    return {"session_id": session.session_id, "title": session.title}
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):
